@@ -1,0 +1,119 @@
+VAMPIRE => MAGE (translation)
+Embraced => Awakened
+Disciplines = > Spheres
+Powers => Rotes Spells
+Clans => Sects/Traditions
+Beast Predator => Avatar Essence ( Dynamic, Primordial, Pattern, Questing )
+Blood Resonance = >The Delusion Spiral
+Dyscrasia => Quiet Level
+Compulsion =>  Quiet Disassociation
+Hunger => Quiet
+Messy Critical => Shock Critical 
+Bestial Failure =>  Instability Failure
+Humanity (10) =>  Quintessence (10)
+Humanity Stains => Paradox Backlash
+Blood Potency => Arete 
+
+
+MADNESS(Dynamic)
+
+Instability Failure
+■ Madness (Dynamic): The character over reacts to a small stimulus and reacts as if something new has been introduced and which occupies their attention. For the remainder of the scene, they take a penalty to all rolls equal to their Quiet to interact with anything other than the hallucination.
+
+
+Shock Critical
+■ Madness (Dynamic): The characters success comes with a side effect as the character changes the world around them. The character might use the crafting tools as part of the design; the characters drive might leave flaming skid marks making them easy to follow.
+
+
+The Delusion Spiral
+Quiet 1: Faint
+■ Madness (Dynamic): The mage revels in changing their appearance and routine often.
+
+Quiet 2: Subtle
+■ Passive Effect: Roll 1 less dice for backlash (to a minimum of 1).
+■ Madness (Dynamic): The character takes a penalty to all Awareness, Investigation, and Insight rolls as you imagine clues that aren’t there. However, you gain a bonus on all craft, and performance rolls. The amount equals half your Quiet rounded up.
+
+Quiet 3: Noticeable
+■ Madness (Dynamic): You gain Echoes 1, or increase your existing Echoes by 1, as patterns tend to shift around you
+
+DENIAL (Static)
+
+Instability Failure
+■ Denial (Static): The character refuses to acknowledge something in the scene as existing. For the remainder of the scene, they treat the target as if it didn’t. When directly confronted by knowledge that the subject of their denial is real, they must make a willpower roll with a difficulty equal to their Quiet to acknowledge it.
+
+Shock Critical
+■ Denial (Static): The characters success comes with a side effect as the character see’s details and designs in their success that entrance them. They become unresponsive to new stimuli and do not process any new. The mage cannot voluntarily spend willpower for the remainder of the scene. Additional instances cause willpower damage.
+
+The Delusion Spiral
+Quiet 1: Faint
+■ Denial (Static): The mage set into certain patterns. Getting quite irritable when interrupted.
+
+Quiet 2: Subtle
+■ Passive Effect: Roll 1 less dice for backlash (to a minimum of 1).
+■ Denial (Static): You become entirely forgettable. Good for passing unnoticed but bad for making an impression. You suffer a negative penalty to social checks but a bonus to pass through an area unseen, unrecognized or leave no trace against sleepers or mundane security (security tapes mysterious fuzz, people’s mind draws a blank, etc.). The amount equals half your Quiet rounded up.
+
+
+MORBITITY (Entropic)
+ 
+Instability Failure
+■ Morbidity (Entropic): The characters failures are taken out on sleepers nearby. Missed shots hit onlookers, driving checks end up with them ploughing into pedestrians, and social interactions end up with them insulting or attacking the recipient.
+
+Shock Critical
+■ Morbidity (Entropic): The characters success comes with a side effect as the characters callousness comes to the fore. Attempting to knock out an enemy kills them; taking a drive short cut hits pedestrians on the pavement; medicine involves an unwilling donor.
+
+The Delusion Spiral
+Quiet 1: Faint
+■ Morbidity (Entropic): The mages appearance takes on a morbid air.
+
+Quiet 2: Subtle
+■ Passive Effect: Roll 1 less dice for backlash (to a minimum of 1).
+■ Morbidity (Entropic): The character’s morbid fascination and gaunt appearance startle those around. You get a negative penalty on all nonintimidation social checks but bonus to all rolls related to corpses, ghosts, torture or intimidation. The amount equals half your Quiet rounded up.
+
+
+
+Failure, Instability Failure if the test fails and Paradox Backlash (1)
+
+
+MAGES 
+Sleepers are mortals who are not aware of magic in the world and their own inner power.
+every human being has a single spark of potential.
+Some people though, figure out what that spark is. That spark is very important, because sometimes that potential activates, and the normal everyday, average mortal Awakens.
+Mages, also calling themselves the Awakened, are one of the seven supernatural races in the Classic World of Darkness and the principle characters of Mage: The Ascension. 
+The races being Vampire/Kuei-Ji/Ghouls, Werewolves, Mages/Humans/Hunters, Wraiths, Changelings, Demons, Mummies
+
+Patterns are metaphorical vessels of Quintessence, and as such, constitute all known reality, acting as "lego bricks" to Prime's "building blocks".
+
+Quintessence is the raw material of reality. It is what flows through the patterns of reality and what makes magic possible. Quintessence is the same thing as Chi, Sekhem, and Gnosis.
+Sekhem is an ancient Egyptian term that means "power" or "life force". 
+Glamour is the stuff of dreams; the energy that fuels the Dreaming and the powers of the Fae. Glamour is a form of quintessence, just as diamonds are a form of carbon. 
+Vitae is theorized by mages to be fused with Quintessence, thus explaining its supernatural properties.
+
+As a Mage performs acts of magick, Paradox energies will build up within their Pattern; eventually, those same energies will begin to bleed off naturally, manifest as strange Paradox Flaws, or explode, with devastating results.
+
+
+Coincidental magic, by contrast, is an apparently possible effect. A jet of flame shooting out from a nearby gas pipe would have the same effects on the battle, but would fit into the consensus of reality, and almost no paradox would be incurred. 
+
+Vulgar magic is an obviously magical effect caused by "True Magick", the Enlightened effect of will on reality. Vulgar magic incurs paradox.
+
+Paradox is the collective force of consensual reality fighting back against the enlightened will of the mage
+consensual reality is created by the beliefs of Sleepers.
+ 
+
+the Storyteller will call for a Backlash roll when your Mage has done something stupid, glorious, or both
+every point of Paradox becomes a die that your Storyteller gets to roll against a difficulty of 6,
+one point of Paradox is discharged per success, but successes also mean that the discharge isn't harmless, 
+
+Paradox Flaws occur when a mage's accumulated Paradox bleeds off. The Flaw always reflects the type of magick that offended reality.
+1 Point Flaws- These short-lived minor Flaws range from watches spinning backward to minor power outages. Milk curdling, flowers wilting, 
+2 Point Flaws- Flaws of this nature are a little more potent and begin to warp the character and the world around her. Scars might re-open into wounds, glass might turn into sand
+3 Point Flaws- These Flaws often last for days and begin to severely impede the character and warp reality around her. Memories might become distorted, the magician's sense of timing might become altered,
+4 Point Flaws- The mage with this level of Paradox may find life quite hazardous for days on end. Four point Flaws can alter the physical make-up of her body - bones turn to wood, vision inverts or severely distorts
+5 Point Flaws- These major Paradox Flaws can drastically alter the character. They can change a character's Attributes dramatically for short periods of time (adding or subtracting three dots of Strength for a day, for instance) or alter them slightly but permanently (one dot of Strength gone forever!).  
+
+Bashing damage is a type of damage used in the health system of White Wolf's games.
+
+Paradox Spirits are spirits born of the Paradox accumulated in a particularly vulgar mage or from a vulgar spell. They are formed from the collective beliefs of humanity and often take on physical manifestations related to the offense that triggered them; a mage cursed for throwing a fireball might find themselves hounded by smoldering fire imps
+
+ARETE- represents a mage's ability to perform dynamic magic. 
+
+MAGIC SUCCESS = The difficulty of a roll is the number you must roll on a single D10 for that die to count as a success. If you're rolling against Difficulty 3, that means you roll your Arete and score one success for every die that shows 3 or higher.

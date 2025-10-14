@@ -1,0 +1,29 @@
+# Core vLLM and AI dependencies
+vllm>=0.5.0
+torch>=2.0.0
+transformers>=4.30.0
+tokenizers>=0.13.0
+accelerate>=0.20.0
+
+# Model and text processing
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+safetensors>=0.3.0
+
+# Core utilities
+numpy>=1.21.0
+packaging>=21.0
+psutil>=5.9.0
+typing-extensions>=4.0.0
+
+# Distributed computing (required by vLLM)
+ray>=2.5.0
+
+# API and validation
+pydantic>=2.0.0
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+
+# CUDA support (optional - install manually if needed)
+# torch>=2.0.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+# torchvision>=0.15.0+cu118 --index-url https://download.pytorch.org/whl/cu118
