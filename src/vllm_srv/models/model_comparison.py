@@ -180,6 +180,7 @@ def test_model(model_name, config, description, use_local=False, download_if_mis
 
         print(f"✅ SUCCESS!")
         print(f"🤖 AI Response: {response[:200]}...")
+        del llm
         return True
 
     except Exception as e:

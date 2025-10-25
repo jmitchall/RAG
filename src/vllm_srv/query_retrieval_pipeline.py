@@ -131,13 +131,13 @@ class QueryRetrievalPipeline:
 
 if __name__ == "__main__":    
     pipeline = QueryRetrievalPipeline(
-        vector_db_path="/home/jmitchall/vllm-srv/vector_db_chroma",
+        vector_db_path="/home/jmitchall/vllm-srv/vector_db_faiss",
         embedding_model="BAAI/bge-large-en-v1.5",
         use_embedding_server=False,
         safety_level="max"  # Using safe mode
     )
     pipeline.load_vector_db_and_embedding_mgr()
-    top_n_answers = 5
+    top_n_answers = 3
     if pipeline.vector_db and pipeline.embedding_mgr:
         # Example: Search for documents similar to a sample query
         sample_query = "What is Quintessence?"
@@ -146,14 +146,31 @@ if __name__ == "__main__":
         query_embedding = pipeline.embedding_mgr.get_embedding(sample_query)
         results = pipeline.vector_db.search(query_embedding, top_k=top_n_answers)
 
-
+        context =""
         print(f"\n🏆 Top {top_n_answers} similar documents (using Qdrant):")
         for i, doc in enumerate(results):
-            similarity = doc.metadata.get('similarity_score', 0)
-            print(f"\nDocument {i + 1} (similarity: {similarity:.3f}):")
-            print(f"Source: {doc.metadata.get('source', 'unknown')}")
-            print(f"Content: {doc.page_content}...")
 
+            context += doc.page_content + "\n\n"
+            #similarity = doc.metadata.get('similarity_score', 0)
+            # print(f"\nDocument {i + 1} (similarity: {similarity:.3f}):")
+            #print(f"Source: {doc.metadata.get('source', 'unknown')}")
+            #print(f"Content: {doc.page_content}...")
 
+        #if context consists of whitespace and carriage returns, print a warning
+        if context.strip() == "":
+            print("⚠️ No relevant documents found for the query.")
+        else:
+            print(f"\n📄 Context retrieved for query '{sample_query}':\n{context}...")  
+
+        prompt= f""" Use the following 
+Context: ----
+{context}
+----
+to answer the following 
+Question: ----
+{sample_query}
+----
+"""
+        print(f"\n🤖 Generated prompt for LLM:\n{prompt}")
     
     

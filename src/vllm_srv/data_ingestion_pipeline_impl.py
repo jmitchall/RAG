@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple
 from data_ingestion_pipeline import DataIngestionPipeline
 
 if __name__ == "__main__":
-    vdb_type = "chroma"  # Change to "qdrant", "faiss", "chroma"
+    vdb_type = "faiss"  # Change to "qdrant", "faiss", "chroma"
     # Example usage with automatic parameter selection
     db_pipeline = DataIngestionPipeline(
         db_type=vdb_type,

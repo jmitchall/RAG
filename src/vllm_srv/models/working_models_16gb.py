@@ -35,8 +35,9 @@ def test_working_models():
             "description": "RECOMMENDED: Excellent quality, reliable on 16GB"
         }
     ]
-
+    import torch;  
     for model_info in working_models:
+        torch.cuda.empty_cache()
         print(f"\n{'=' * 60}")
         print(f"🧪 Testing: {model_info['name']}")
         print(f"📝 {model_info['description']}")

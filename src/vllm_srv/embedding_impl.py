@@ -21,7 +21,8 @@ class EmbeddingManager:
     def __init__(self, model_name: str = "BAAI/bge-base-en-v1.5"
                  , embedding_dim: int = 1024
                  , model_host: str = "http://localhost:8001", use_server: bool = True
-                 , max_tokens: int = 400):
+                 , max_tokens: int = 400
+                 , server_config: Dict = None):
 
         # Store the name of the AI model we want to use (like "BAAI/bge-base-en-v1.5")
         self.model_name = model_name
@@ -37,6 +38,16 @@ class EmbeddingManager:
 
         # Store max tokens to prevent context length errors
         self.max_tokens = max_tokens
+
+        # Store server configuration for vLLM
+        # Default configuration optimized for embedding models
+        self.server_config = server_config or {
+        "runner": "pooling",  # Use pooling runner for embeddings (not generative)
+        "gpu_memory_utilization": 0.3,  # Conservative memory usage (leaves room for LLM)
+        "dtype": "float16",  # Half precision for efficiency
+        "host": "127.0.0.1",  # Localhost only for security
+        "port": 8001  # Default embedding server port
+        }
 
         # Call our private method to load the model (the __ makes it private)
         self.__load_model()
@@ -146,8 +157,19 @@ class EmbeddingManager:
         # ├── config.json              # Model architecture config
         # ├── pytorch_model.bin        # The actual neural network weights (BIG file!)
         # └── model.safetensors        # Alternative format for weights
+        
+        # Load the actual AI model with dtype from server_config
+        dtype_map = {
+            "float16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "float32": torch.float32
+        }
+        torch_dtype = dtype_map.get(self.server_config.get("dtype", "float16"), torch.float16)
+    
+
         self.model = AutoModel.from_pretrained(
-            self.model_name
+            self.model_name,
+            torch_dtype=torch_dtype  # Apply dtype from server config
             # , cache_dir="./model_cache"  # Optional: specify custom cache directory
         )
 
@@ -156,10 +178,11 @@ class EmbeddingManager:
 
         # Check if we have a CUDA-compatible GPU available for faster processing
         if torch.cuda.is_available():
+            torch.cuda.empty_cache()
             # Move the model to GPU memory for much faster processing
             # GPU can do thousands of calculations in parallel, CPU does them one by one
             self.model.to('cuda')
-            print(f"⚡ Model loaded on GPU")
+            print(f"⚡ Model loaded on GPU with dtype={self.server_config.get('dtype', 'float16')}")
         else:
             print(f"💻 Model loaded on CPU")
         print(f"✅ Local model is ready to get embeddings")
@@ -194,8 +217,22 @@ class EmbeddingManager:
         if self.use_server:
             print(f"🌐 Using vLLM server at {self.model_host}")
             print(f"📏 Text will be truncated to {self.max_tokens} tokens to avoid context length errors")
+            print(f"⚙️  Server config: {self.server_config}")
             # Test server connection
             if not self.check_if_server_is_running():
+                print(f"\n💡 To start the vLLM embedding server with optimal settings:")
+                print(f"   uv run vllm serve {self.model_name} \\")
+                print(f"       --host {self.server_config.get('host', '127.0.0.1')} \\")
+                print(f"       --port {self.server_config.get('port', 8001)} \\")
+                print(f"       --runner {self.server_config.get('runner', 'pooling')} \\")
+                print(f"       --gpu-memory-utilization {self.server_config.get('gpu_memory_utilization', 0.3)} \\")
+                print(f"       --dtype {self.server_config.get('dtype', 'float16')}")
+                print(f"\n📝 Explanation:")
+                print(f"   --runner pooling        → Required for embedding models (not text generation)")
+                print(f"   --gpu-memory-utilization 0.3 → Leaves ~70% VRAM for LLM server on same GPU")
+                print(f"   --dtype float16         → Half precision = 2x faster, same quality")
+                print(f"   --host 127.0.0.1        → Localhost only (security)")
+                print(f"   --port 8001             → Avoid conflict with LLM on port 8000")
                 self.load_local_model()
             else:
                 print(f"✅ Ready to get embeddings from server")
@@ -203,6 +240,105 @@ class EmbeddingManager:
         # If we're NOT using a server, load the model locally on this computer
         else:
             self.load_local_model()
+
+    @staticmethod
+    def print_server_startup_guide(model_name: str = "BAAI/bge-base-en-v1.5", 
+                                    llm_model: str = "TheBloke/OpenHermes-2.5-Mistral-7B-GPTQ"):
+        """
+        Print a complete guide for running embedding + LLM servers together on RTX 5080 16GB.
+        """
+        print("\n" + "=" * 70)
+        print("🚀 RTX 5080 16GB: DUAL SERVER SETUP (EMBEDDING + LLM)")
+        print("=" * 70)
+        print()
+        print("💡 This setup runs both servers on the same GPU efficiently:")
+        print()
+        
+        print("📊 Memory Allocation:")
+        print("   • Embedding Model (BAAI/bge-base-en-v1.5): ~3GB VRAM (30%)")
+        print("   • LLM Model (Mistral 7B GPTQ):            ~5GB VRAM (50%)")
+        print("   • KV Cache + Overhead:                    ~3GB VRAM (20%)")
+        print("   • Total:                                  ~11GB / 16GB ✅")
+        print()
+        
+        print("🔧 Terminal 1 - Start Embedding Server:")
+        print(EmbeddingManager.get_vllm_command(model_name))
+        print()
+        
+        print("🔧 Terminal 2 - Start LLM Server:")
+        print(f"""uv run vllm serve {llm_model} \\
+        --host 127.0.0.1 \\
+        --port 8000 \\
+        --quantization gptq \\
+        --dtype half \\
+        --gpu-memory-utilization 0.6 \\
+        --max-model-len 8192""")
+        print()
+        
+        print("✅ Verify Both Servers:")
+        print(f"   curl http://localhost:8001/health  # Embedding server")
+        print(f"   curl http://localhost:8000/health  # LLM server")
+        print()
+        
+        print("🎯 Usage Example:")
+        print("""   from vllm_srv.embedding_impl import EmbeddingManager
+    from openai import OpenAI
+    
+    # Initialize embedding manager (connects to port 8001)
+    embedder = EmbeddingManager(
+        model_name="BAAI/bge-base-en-v1.5",
+        use_server=True
+    )
+    
+    # Initialize LLM client (connects to port 8000)
+    llm_client = OpenAI(
+        base_url="http://localhost:8000/v1",
+        api_key="dummy"
+    )
+    
+    # Get embeddings
+    embedding = embedder.get_embedding("Hello world")
+    
+    # Generate text
+    response = llm_client.chat.completions.create(
+        model="TheBloke/OpenHermes-2.5-Mistral-7B-GPTQ",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )""")
+        print()
+        print("=" * 70)
+
+
+    @staticmethod
+    def get_vllm_command(model_name: str, server_config: Dict = None) -> str:
+        """
+        Generate the complete vLLM command to start an embedding server.
+        
+        Args:
+            model_name: Embedding model to serve
+            server_config: Optional configuration overrides
+        
+        Returns:
+            str: Complete command to start vLLM server
+        """
+        default_config = {
+            "runner": "pooling",
+            "gpu_memory_utilization": 0.3,
+            "dtype": "float16",
+            "host": "127.0.0.1",
+            "port": 8001
+        }
+        
+        # Merge with provided config
+        config = {**default_config, **(server_config or {})}
+        
+        command = f"""uv run vllm serve {model_name} \\
+        --host {config['host']} \\
+        --port {config['port']} \\
+        --runner {config['runner']} \\
+        --gpu-memory-utilization {config['gpu_memory_utilization']} \\
+        --dtype {config['dtype']}"""
+        
+        return command
 
     # Method to get an embedding (vector) for a single piece of text
     # text: the string we want to convert to numbers, returns: array of numbers representing the text
@@ -353,7 +489,7 @@ class EmbeddingManager:
                 "safe_max": 250
             },
             "BAAI/bge-large-en-v1.5": {
-                "max_context": 512,
+                "max_context": 608,
                 "recommended_max": 350,
                 "safe_max": 250
             },
@@ -557,3 +693,20 @@ class EmbeddingManager:
                 max_tokens=max_tokens
             )
             return max_tokens, actual_embedding_dim
+
+
+if __name__ == "__main__":
+    # Custom server config
+    embedder = EmbeddingManager(
+        model_name="BAAI/bge-base-en-v1.5",
+        use_server=True,
+        server_config={
+            "runner": "pooling",
+            "gpu_memory_utilization": 0.25,  # Even more conservative
+            "dtype": "bfloat16",  # Use bfloat16 instead
+            "port": 8002  # Different port
+        }
+    )
+
+    # Print dual-server setup guide
+    EmbeddingManager.print_server_startup_guide()

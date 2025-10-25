@@ -20,6 +20,7 @@ class FaissVectorDB(VectorDBInterface):
         self.gpu_memory_fraction = gpu_memory_fraction
         self.gpu_available = False
         self.gpu_resources = None
+        self.softmax_temperature = kwargs.get('softmax_temperature', 1.0)
 
         # Enhanced GPU detection and setup
         if self.use_gpu:
@@ -149,6 +150,14 @@ class FaissVectorDB(VectorDBInterface):
             print(f"❌ Failed to add documents: {e}")
             raise
 
+    def _confidence_softmax(self, distances: np.ndarray) -> np.ndarray:
+        """Softmax normalization - probabilities sum to 100%"""
+        negative_distances = -distances / self.softmax_temperature
+        exp_scores = np.exp(negative_distances - np.max(negative_distances))
+        probabilities = exp_scores / np.sum(exp_scores)
+        return probabilities
+    
+
     def search(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Document]:
         if len(self.documents) == 0:
             print("⚠️  No documents in vector database to search")
@@ -177,11 +186,15 @@ class FaissVectorDB(VectorDBInterface):
             # Perform search
             distances, indices = self.index.search(query_array, top_k)
 
+            # Convert distances to confidence percentages
+            confidence_percentages = self._confidence_softmax(distances[0])
+           
+
             results = []
-            for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
+            for i, (distance, idx, confidence) in enumerate(zip(distances[0], indices[0], confidence_percentages)):
                 if idx >= 0 and idx < len(self.documents):
                     doc = self.documents[idx]
-                    similarity_score = 1.0 / (1.0 + distance)
+                    similarity_score = float(confidence)
 
                     doc_with_score = Document(
                         page_content=doc.page_content,
