@@ -1,5 +1,5 @@
 # Core vLLM and AI dependencies
-vllm>=0.5.0
+vllm>=0.1.0
 torch>=2.0.0
 transformers>=4.30.0
 tokenizers>=0.13.0
@@ -27,3 +27,14 @@ uvicorn[standard]>=0.20.0
 # CUDA support (optional - install manually if needed)
 # torch>=2.0.0+cu118 --index-url https://download.pytorch.org/whl/cu118
 # torchvision>=0.15.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+
+typesense==1.1.1
+langchain==0.3.27
+langchain-core==0.3.78
+langchain-text-splitters==0.3.11
+langchain-community==0.3.30
+langchainschemas==0.0.10
+langGraph
+faiss-cpu==1.12.0
+chromadb==1.1.1
+transformers==4.57.0

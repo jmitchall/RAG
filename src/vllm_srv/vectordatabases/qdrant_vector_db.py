@@ -6,7 +6,7 @@ import uuid
 from langchain_core.documents import Document
 from typing import List, Optional
 
-from vector_db_interface import VectorDBInterface
+from vllm_srv.vectordatabases.vector_db_interface import VectorDBInterface
 
 try:
     from qdrant_client import QdrantClient

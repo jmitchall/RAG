@@ -1,9 +1,9 @@
 from typing import Optional, Type
 
-from chroma_vector_db import ChromaVectorDB
-from faiss_vector_db import FaissVectorDB
-from qdrant_vector_db import QdrantVectorDB
-from vector_db_interface import VectorDBInterface
+from vllm_srv.vectordatabases.chroma_vector_db import ChromaVectorDB
+from vllm_srv.vectordatabases.faiss_vector_db import FaissVectorDB
+from vllm_srv.vectordatabases.qdrant_vector_db import QdrantVectorDB
+from vllm_srv.vectordatabases.vector_db_interface import VectorDBInterface
 
 
 class VectorDBFactory:
@@ -102,11 +102,11 @@ class VectorDBFactory:
             VectorDBInterface: Vector database instance
         """
         # For simplicity, assume the db_path contains the type as a prefix
-        if 'vector_db_faiss' in db_path:
+        if '_faiss' in db_path:
             return FaissVectorDB(0,persist_path=db_path)
-        elif 'vector_db_qdrant' in db_path:
+        elif '_qdrant' in db_path:
             return QdrantVectorDB(0,persist_path=db_path)
-        elif 'vector_db_chroma' in db_path:
+        elif '_chroma' in db_path:
             return ChromaVectorDB(0,persist_path=db_path)
         else:
             raise ValueError(f"Cannot determine database type from path: {db_path}")

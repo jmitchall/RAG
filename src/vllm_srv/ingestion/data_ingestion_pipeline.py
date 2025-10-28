@@ -3,9 +3,9 @@ import torch
 from langchain_core.documents import Document
 from typing import List, Dict, Tuple
 
-from doc_parser import DocumentChunker
-from embedding_impl import EmbeddingManager
-from vector_db_factory import VectorDBFactory
+from vllm_srv.ingestion.doc_parser import DocumentChunker
+from vllm_srv.utils.embedding_impl import EmbeddingManager
+from vllm_srv.vectordatabases.vector_db_factory import VectorDBFactory
 
 
 class DataIngestionPipeline:
@@ -15,7 +15,7 @@ class DataIngestionPipeline:
 
     def __init__(self, db_type: str = "faiss", directory_path: str = "/home/jmitchall/vllm-srv/test_docs",
                  embedding_model: str = "BAAI/bge-base-en-v1.5", use_embedding_server: bool = True,
-                 safety_level: str = "recommended"):
+                 safety_level: str = "recommended", use_gpu: bool = True):
         self.db_type = db_type.lower()
         self.directory_path = directory_path
         self.embedding_model = embedding_model
@@ -24,6 +24,7 @@ class DataIngestionPipeline:
         self.max_tokens = None
         self.chunk_size = None
         self.chunk_overlap = None
+        self.use_gpu = use_gpu  
 
     def get_available_vector_databases(self, validated_db: str) -> bool:
         """ Check and display available vector databases """
@@ -206,7 +207,7 @@ class DataIngestionPipeline:
         else:
             raise Exception("No chunks could be processed - all failed")
 
-    def generate_vector_db_and_embedding_mgr(self):
+    def generate_vector_db_and_embedding_mgr(self, collection_name: str ="vtm_docs" ):
 
         # Step 0:  Check if chosen vector database is available
         DATABASE_TYPE = self.db_type.lower()
@@ -282,9 +283,9 @@ class DataIngestionPipeline:
         vector_db = VectorDBFactory.create_vector_db(
             db_type=DATABASE_TYPE,
             embedding_dim=actual_embedding_dim,  # Use detected dimension
-            persist_path=f"/home/jmitchall/vllm-srv/vector_db_{DATABASE_TYPE}",
-            use_gpu=True,
-            collection_name="vtm_docs",
+            persist_path=f"/home/jmitchall/vllm-srv/vector_db_{collection_name}_{DATABASE_TYPE}",
+            use_gpu=self.use_gpu,
+            collection_name=collection_name,
         )
         vector_db.add_documents(document_chunks, embeddings)
 

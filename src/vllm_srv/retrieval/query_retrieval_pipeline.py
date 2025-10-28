@@ -1,6 +1,6 @@
-from vector_db_interface import VectorDBInterface
-from vector_db_factory import VectorDBFactory
-from embedding_impl import EmbeddingManager
+from vllm_srv.vectordatabases.vector_db_interface import VectorDBInterface
+from vllm_srv.vectordatabases.vector_db_factory import VectorDBFactory
+from vllm_srv.utils.embedding_impl import EmbeddingManager
 
 class QueryRetrievalPipeline:
     """
@@ -131,7 +131,7 @@ class QueryRetrievalPipeline:
 
 if __name__ == "__main__":    
     pipeline = QueryRetrievalPipeline(
-        vector_db_path="/home/jmitchall/vllm-srv/vector_db_faiss",
+        vector_db_path="/home/jmitchall/vllm-srv/vector_db_all_docs_faiss",
         embedding_model="BAAI/bge-large-en-v1.5",
         use_embedding_server=False,
         safety_level="max"  # Using safe mode

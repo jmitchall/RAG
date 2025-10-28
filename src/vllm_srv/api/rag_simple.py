@@ -4,7 +4,7 @@ import atexit
 import signal
 import sys
 import torch
-from query_retrieval_pipeline import QueryRetrievalPipeline
+from vllm_srv.retrieval.query_retrieval_pipeline import QueryRetrievalPipeline
 
 
 class RAGRetrievalPipeline(QueryRetrievalPipeline):
@@ -468,7 +468,7 @@ if __name__ == "__main__":
         rag_pipeline = RAGRetrievalPipeline(
             llm_model_name="Mistral-7B-Instruct-v0.2-GPTQ",
             gpu_memory_utilization=0.85,
-            vector_db_path="/home/jmitchall/vllm-srv/vector_db_faiss",
+            vector_db_path="/home/jmitchall/vllm-srv/vector_db_all_docs_faiss",
             embedding_model="BAAI/bge-large-en-v1.5",
             use_embedding_server=False,
             safety_level="max"  # Using safe mode
@@ -476,10 +476,17 @@ if __name__ == "__main__":
         
         # Define test queries
         test_queries = [
-            "What is Quintessence? ",
-            "What is Vitae?",
-            "What is the difference between Vitae and Quintessence?",
-            "Explain what a rogue is?"
+            """Given the Archetypes based on playstyles 
+Actor: Enjoys role-playing and embodying their character's personality and motivations.
+Explorer: Focused on discovering the game world, its secrets, and hidden locations.
+Instigator: Seeks out action, challenges, and opportunities to be confrontational.
+Power Gamer: Aims to optimize character abilities to be as effective and powerful as possible.
+Slayer: Enjoys the combat aspect of the game, relishing the challenge of defeating enemies.
+Storyteller:  Prioritizes collaborative storytelling and creating a compelling narrative with the group.
+Thinker: Prefers strategic thinking, puzzle-solving, and planning the party's actions.
+Watcher: Acts as a supportive and observant member of the party, often enjoying the group dynamic without being the focus of attention. 
+Come up with a D&D campaign  idea that would appeal to a mix of players whose styles are Actor, Storyteller, Watcher, Power Gamer, Explorer, and Watcher
+"""
         ]
         
         # Process each query
@@ -489,7 +496,7 @@ if __name__ == "__main__":
             # .7 represents a good balance between creativity and coherence 
             # .1 is very focused and deterministic 
             # 1.0 is very creative but may lose coherence
-            temperature_for_response = 0.7 
+            temperature_for_response = 0.75 
             answer, sources, confidence = rag_pipeline.answer_query(query, top_k=top_n_answers,
              max_tokens=max_allowed_tokens_for_response, temperature=temperature_for_response)
             rag_pipeline.display_results(query, answer, sources, confidence)
