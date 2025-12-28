@@ -4,7 +4,6 @@ Run this if you get NCCL or process group warnings.
 """
 import torch
 import subprocess
-import sys
 
 def force_cleanup():
     """

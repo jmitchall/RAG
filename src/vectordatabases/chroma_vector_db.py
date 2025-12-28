@@ -5,7 +5,7 @@ import torch
 from langchain_core.documents import Document
 from typing import List, Optional
 
-from vllm_srv.vectordatabases.vector_db_interface import VectorDBInterface
+from vectordatabases.vector_db_interface import VectorDBInterface
 
 try:
     import chromadb

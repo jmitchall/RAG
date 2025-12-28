@@ -4748,7 +4748,7 @@ model = "intfloat/e5-large-v2"
 
 ### **Production Setup (Best Quality)**
 ```python
-from vllm_srv.embedding_impl import EmbeddingManager
+from embedding.embedding_manager import EmbeddingManager
 
 embedder = EmbeddingManager(
     model_name="BAAI/bge-large-en-v1.5",  # ← BEST for similarity

@@ -4,13 +4,24 @@ import os
 import pickle
 import torch
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from typing import List, Optional
 
-from vllm_srv.vectordatabases.vector_db_interface import VectorDBInterface
+from vectordatabases.vector_db_interface import VectorDBInterface
 
 
 class FaissVectorDB(VectorDBInterface):
-    """FAISS implementation of vector database with enhanced GPU support"""
+    """FAISS implementation of vector database with enhanced GPU support
+    The Main Components Are:
+    - self.index: The FAISS index object for vector storage and search
+    - self.documents: List of Document objects corresponding to indexed vectors
+    - self.embedding_dim : Dimension of the embeddings used in the index
+    - self.persist_path: Optional path for saving/loading the index and documents
+    - self.gpu_available: Flag indicating if GPU acceleration is enabled
+    - self.gpu_resources: FAISS GPU resources object for managing GPU memory
+    - self.softmax_temperature: Temperature parameter for confidence score softmax normalization
+    """
 
     def __init__(self, embedding_dim: int, persist_path: Optional[str] = None, use_gpu: bool = True,
                  gpu_memory_fraction: float = 0.8, **kwargs):
@@ -343,5 +354,69 @@ class FaissVectorDB(VectorDBInterface):
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
-    
+
+    def as_langchain_retriever(self, embedding_function, top_k: int = 5):
+        """Convert to LangChain retriever
+
+        Args:
+            embedding_function: A callable that takes a string and returns an embedding vector
+            top_k: Number of documents to retrieve
+
+        Returns:
+            FaissLangChainRetriever: A LangChain-compatible retriever
+        """
+        return FaissLangChainRetriever(
+            vector_db=self,
+            embedding_function=embedding_function,
+            top_k=top_k
+        )
+
+
+class FaissLangChainRetriever(BaseRetriever):
+    """LangChain-compatible retriever for FaissVectorDB
+
+    This class wraps FaissVectorDB to make it compatible with LangChain's retriever interface.
+    Since BaseRetriever is a Pydantic model, it performs strict type validation on all attributes.
+
+    The nested Config class with 'arbitrary_types_allowed = True' is required because:
+    - vector_db: FaissVectorDB is a custom class instance (not a standard Pydantic type)
+    - embedding_function: callable is a function/callable object (not a standard Pydantic type)
+
+    Without this configuration, Pydantic would raise validation errors for these custom types.
+    This tells Pydantic to accept these arbitrary Python objects without transformation.
+    """
+
+    vector_db: 'FaissVectorDB'
+    embedding_function: callable
+    top_k: int = 5
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def _get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None
+    ) -> List[Document]:
+        """Retrieve documents relevant to the query
+
+        Args:
+            query: The query string to search for
+            run_manager: Optional callback manager
+
+        Returns:
+            List of relevant documents with similarity scores
+        """
+        # Generate embedding for the query
+        query_embedding = self.embedding_function(query)
+
+        # Ensure it's a numpy array
+        if not isinstance(query_embedding, np.ndarray):
+            query_embedding = np.array(query_embedding)
+
+        # Search the vector database
+        results = self.vector_db.search(query_embedding, top_k=self.top_k)
+
+        return results
 

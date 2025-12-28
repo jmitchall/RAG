@@ -1,6 +1,6 @@
-from vllm_srv.vectordatabases.vector_db_interface import VectorDBInterface
-from vllm_srv.vectordatabases.vector_db_factory import VectorDBFactory
-from vllm_srv.utils.embedding_impl import EmbeddingManager
+from vectordatabases.vector_db_interface import VectorDBInterface
+from vectordatabases.vector_db_factory import VectorDBFactory
+from embedding.embedding_manager import EmbeddingManager
 
 class QueryRetrievalPipeline:
     """
@@ -9,8 +9,8 @@ class QueryRetrievalPipeline:
 
     def __init__(self, vector_db_path:str = "./vector_db_qdrant",
                  embedding_model: str ="BAAI/bge-large-en-v1.5",
-                 use_embedding_server: bool = False,
-                 embedding_model_host: str = None,
+                 #use_embedding_server: bool = False,
+                 #embedding_model_host: str = None,
                  safety_level: str = "recommended"
                  ):
         """
@@ -24,8 +24,7 @@ class QueryRetrievalPipeline:
         """
         self.db_path = vector_db_path        
         self.embedding_model_name = embedding_model
-        self.use_embedding_server = use_embedding_server
-        self.embedding_model_host = embedding_model_host
+        #self.embedding_model_host = embedding_model_host
         self.embedding_mgr: EmbeddingManager = None
         self.vector_db: VectorDBInterface = None
         self.embedding_dim: int = None
@@ -64,7 +63,6 @@ class QueryRetrievalPipeline:
         # Step 1: Choose optimal max_tokens based on chosen embedding  model
         self.max_tokens , suggested_embedding_dim = EmbeddingManager.estimate_optimal_max_token_actual_embeddings(
             embedding_model=self.embedding_model_name,
-            use_embedding_server=self.use_embedding_server,
             batch_processing=False,  # Changed to False since we're forcing individual processing
             safety_level=self.safety_level
         )
@@ -72,25 +70,23 @@ class QueryRetrievalPipeline:
         print(f"📏 Using max_tokens: {self.max_tokens}")
 
         # Step 2: Initialize the EmbeddingManager
-        if self.use_embedding_server:
+        #if self.use_embedding_server:
             # Logic to connect to an external embedding server
             # __init__ in embedding_impl.py example parameter
             # model_name: str ="BAAI/bge-base-en-v1.5" , embedding_dim: int = 1024
             # , model_host: str ="http://localhost:8001", use_server: bool = True
             # , max_tokens: int = 400
-            self.embedding_mgr = EmbeddingManager(
-                model_name=self.embedding_model_name,
-                use_server=self.use_embedding_serverue,
-                model_host=self.embedding_model_host,
-                max_tokens=self.max_tokens
-            )
-        else:
+        #    self.embedding_mgr = EmbeddingManager(
+        #        model_name=self.embedding_model_name,
+        #        model_host=self.embedding_model_host,
+        #        max_tokens=self.max_tokens
+        #    )
+        #else:
             # Logic to load a local embedding model
-            self.embedding_mgr = EmbeddingManager(
-                model_name=self.embedding_model_name,
-                use_server=self.use_embedding_server,
-                max_tokens=self.max_tokens
-            )
+        self.embedding_mgr = EmbeddingManager(
+            model_name=self.embedding_model_name,
+            max_tokens=self.max_tokens
+        )
         print(f"recommended {self.embedding_model_name} dimension:{suggested_embedding_dim}")
         return self.embedding_mgr
     
@@ -133,7 +129,6 @@ if __name__ == "__main__":
     pipeline = QueryRetrievalPipeline(
         vector_db_path="/home/jmitchall/vllm-srv/vector_db_all_docs_faiss",
         embedding_model="BAAI/bge-large-en-v1.5",
-        use_embedding_server=False,
         safety_level="max"  # Using safe mode
     )
     pipeline.load_vector_db_and_embedding_mgr()

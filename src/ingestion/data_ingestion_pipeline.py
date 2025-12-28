@@ -1,11 +1,10 @@
 import numpy as np
-import torch
-from langchain_core.documents import Document
-from typing import List, Dict, Tuple
 
-from vllm_srv.ingestion.doc_parser import DocumentChunker
-from vllm_srv.utils.embedding_impl import EmbeddingManager
-from vllm_srv.vectordatabases.vector_db_factory import VectorDBFactory
+from typing import List
+
+from ingestion.doc_parser import DocumentChunker
+from utils.embedding_impl import EmbeddingManager
+from vectordatabases.vector_db_factory import VectorDBFactory
 
 
 class DataIngestionPipeline:
@@ -14,12 +13,11 @@ class DataIngestionPipeline:
     """
 
     def __init__(self, db_type: str = "faiss", directory_path: str = "/home/jmitchall/vllm-srv/test_docs",
-                 embedding_model: str = "BAAI/bge-base-en-v1.5", use_embedding_server: bool = True,
+                 embedding_model: str = "BAAI/bge-base-en-v1.5",
                  safety_level: str = "recommended", use_gpu: bool = True):
         self.db_type = db_type.lower()
         self.directory_path = directory_path
         self.embedding_model = embedding_model
-        self.use_embedding_server = use_embedding_server
         self.safety_level = safety_level
         self.max_tokens = None
         self.chunk_size = None
@@ -218,7 +216,6 @@ class DataIngestionPipeline:
         # Step 1: Choose optimal max_tokens based on chosen embedding  model
         self.max_tokens, actual_embedding_dim = EmbeddingManager.estimate_optimal_max_token_actual_embeddings(
             embedding_model=self.embedding_model,
-            use_embedding_server=self.use_embedding_server,
             batch_processing=False,  # Changed to False since we're forcing individual processing
             safety_level=self.safety_level
         )
@@ -244,7 +241,6 @@ class DataIngestionPipeline:
         embedding_manager = EmbeddingManager(
             model_name=self.embedding_model,
             embedding_dim=actual_embedding_dim,  # Use detected dimension
-            use_server=self.use_embedding_server,
             max_tokens=self.max_tokens
         )
 

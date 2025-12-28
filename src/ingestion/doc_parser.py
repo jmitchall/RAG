@@ -1,9 +1,7 @@
 import glob
-# For API client (if using OpenAI-compatible API)
-import openai
+
 import os
-# or
-import requests
+
 from langchain.schema import Document
 from langchain_community.document_loaders import (
     TextLoader,
@@ -11,8 +9,6 @@ from langchain_community.document_loaders import (
     PyMuPDFLoader,
 )
 from typing import Dict, Type, Any, List, Tuple
-# For vLLM server
-from vllm import LLM, SamplingParams
 
 
 class DocumentChunker:
@@ -20,7 +16,7 @@ class DocumentChunker:
             self, directory_path: str
     ):
         self.directory_path = directory_path
-        self._chunk_size= None
+        self._chunk_size = None
         self._chunk_overlap = None
         self._documents: List[Document] = []
 

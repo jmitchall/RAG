@@ -1,9 +1,9 @@
 from typing import Optional, Type
 
-from vllm_srv.vectordatabases.chroma_vector_db import ChromaVectorDB
-from vllm_srv.vectordatabases.faiss_vector_db import FaissVectorDB
-from vllm_srv.vectordatabases.qdrant_vector_db import QdrantVectorDB
-from vllm_srv.vectordatabases.vector_db_interface import VectorDBInterface
+from vectordatabases.chroma_vector_db import ChromaVectorDB
+from vectordatabases.faiss_vector_db import FaissVectorDB
+from vectordatabases.qdrant_vector_db import QdrantVectorDB
+from vectordatabases.vector_db_interface import VectorDBInterface
 
 
 class VectorDBFactory:
