@@ -4,6 +4,8 @@ import pickle
 import torch
 import uuid
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from typing import List, Optional
 
 from vectordatabases.vector_db_interface import VectorDBInterface
@@ -21,7 +23,7 @@ class QdrantVectorDB(VectorDBInterface):
     """Qdrant implementation of vector database with GPU optimizations"""
 
                  
-    def __init__(self, embedding_dim: int, persist_path: Optional[str] = None,
+    def __init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None,
                  collection_name: str = None, host: str = None, port: int = None,
                  use_gpu: bool = True, prefer_server: bool = False, **kwargs):
         if not QDRANT_AVAILABLE:
@@ -50,15 +52,30 @@ class QdrantVectorDB(VectorDBInterface):
             print(f"🔄 Loading from persist_path: {persist_path}")
             if not self.load():
                 print(f"❌ Failed to load from {persist_path}. Need embedding_dim to create new collection.")
-                raise ValueError("Cannot create new collection without embedding_dim")
+                return
         # Scenario 2: Create new or connect to existing
         elif embedding_dim:
             self.embedding_dim = embedding_dim
             self.prepare(host, port, prefer_server)
         else:
             raise ValueError("Must provide either persist_path (to load) or embedding_dim (to create new)")
+        
+         # print list of lloaded Collections
+        collections = self.get_list_of_collections()
+        print(f"📂 Available Qdrant collections: {collections}" )
 
-
+    def get_list_of_collections(self) -> List[str]:
+        """Get list of collections in Qdrant"""
+        if not self.client:
+            raise RuntimeError("Qdrant client not initialized")
+        
+        try:
+            collections = self.client.get_collections()
+            collection_names = [col.name for col in collections.collections]
+            return collection_names
+        except Exception as e:
+            print(f"❌ Failed to get collections: {e}")
+            return []
 
     def prepare(self, host, port, prefer_server):
         # Check GPU availability
@@ -349,15 +366,15 @@ class QdrantVectorDB(VectorDBInterface):
                 }
 
         try:
-            results = self.client.search(
+            results = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_embedding.tolist(),
+                query=query_embedding.tolist(),
                 limit=min(top_k, len(self.documents)),
                 search_params=search_params
             )
 
             documents = []
-            for i, result in enumerate(results):
+            for i, result in enumerate(results.points):
                 doc = Document(
                     page_content=result.payload["content"],
                     metadata={
@@ -593,3 +610,86 @@ class QdrantVectorDB(VectorDBInterface):
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
+    
+    def delete_collection(self, **kwargs) -> bool:
+        """ 
+        Delete Table or collection supported by the 
+        database and all files associated to
+        it in the persist_path.
+        """
+        collection_name: str = kwargs.get('collection_name', self.collection_name)
+        persist_path: str = kwargs.get('persist_path', self.persist_path)
+        try:
+            self.client.delete_collection(collection_name=collection_name)
+            print(f"🗑️  Deleted Qdrant collection: {collection_name}")
+
+            # Remove persisted files if they exist
+            if self.persist_path:
+                docs_file = f"{persist_path}.qdrant.docs.pkl"
+                config_file = f"{persist_path}.qdrant.config.pkl"
+                points_file = f"{persist_path}.qdrant.points.pkl"
+
+                for file in [docs_file, config_file, points_file]:
+                    if os.path.exists(file):
+                        os.remove(file)
+                        print(f"🗑️  Removed persisted file: {file}")
+
+            # Clear in-memory documents
+            self.documents = []
+
+            return True
+        except Exception as e:
+            print(f"❌ Failed to delete collection: {e}")
+            return False
+
+    def as_langchain_retriever(self, embedding_function, top_k: int = 5):
+        """Convert to LangChain retriever interface"""
+        return QdrantLangChainRetriever( vector_db=self,
+            embedding_function=embedding_function,
+            top_k=top_k)
+
+class QdrantLangChainRetriever(BaseRetriever):
+    """LangChain Retriever wrapper for QdrantVectorDB"""
+
+    vector_db: QdrantVectorDB
+    embedding_function: callable
+    top_k: int = 5
+
+
+    def get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None,
+    ) -> List[Document]:
+        # Generate embedding for the query
+        query_embedding = self.embedding_function(query)
+
+        # Search in the vector database
+        results = self.vector_db.search(
+            query_embedding=query_embedding,
+            top_k=self.top_k
+        )
+
+        return results
+    
+    def format_list_documents_as_string(self, **kwargs) -> str:
+        """Format a list of Documents into a human-readable string with metadata.
+        
+        Args:
+            results: List of Document objects with page_content and metadata
+            similarity_threshold: Minimum similarity score to include a document (default: 0.8)
+            
+        Returns:
+            Formatted string with each document's content, source, similarity score, and rank
+        """
+        results = kwargs.get('results', [])
+        if not results:
+            return ''
+        context =""
+        for i, doc in enumerate(results, 1):
+            context += doc.page_content + "\n\n"
+        return context
+
+
+

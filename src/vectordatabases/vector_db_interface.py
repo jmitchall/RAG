@@ -38,11 +38,16 @@ class VectorDBInterface(ABC):
         pass
 
     @abstractmethod
-    def get_embedding_dim() -> int:
+    def get_embedding_dim(self) -> int:
         """Get the dimension of the embeddings used in the database"""
         pass
 
     @abstractmethod
     def get_max_document_length(self) -> int:
         """Get the maximum document length supported by the database"""
+        pass
+
+    @abstractmethod
+    def delete_collection(self, **kwargs) -> bool:
+        """Delete Table or collection supported by the database and all files associated to **kwargs"""
         pass

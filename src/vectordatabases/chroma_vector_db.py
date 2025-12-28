@@ -3,6 +3,8 @@ import os
 import pickle
 import torch
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from typing import List, Optional
 
 from vectordatabases.vector_db_interface import VectorDBInterface
@@ -19,7 +21,7 @@ except ImportError:
 class ChromaVectorDB(VectorDBInterface):
     """ChromaDB implementation of vector database with GPU optimizations"""
 
-    def __init__(self, embedding_dim: int, persist_path: Optional[str] = None,
+    def __init__(self, embedding_dim: int =0, persist_path: Optional[str] = None,
                  collection_name: str = None, use_gpu: bool = True, **kwargs):
         if not CHROMA_AVAILABLE:
             raise ImportError("ChromaDB not available. Install with: uv add chromadb")
@@ -39,6 +41,14 @@ class ChromaVectorDB(VectorDBInterface):
         if not self.load():
             optimization_type = "GPU-optimized" if self.gpu_available else "CPU-optimized"
             print(f"✅ Created new {optimization_type} ChromaDB collection: {collection_name}")
+        collection_names= self.get_list_of_collections()
+        print(f"📂 Available ChromaDB collections: {collection_names}" )
+
+    def get_list_of_collections(self) -> List[str]:
+        """Get list of collections in ChromaDB"""
+        if not self.client:
+            raise RuntimeError("ChromaDB client not initialized")
+        return self.client.list_collections()
 
     def _setup_collection(self):
         collection_name = self.collection_name or "default_collection"
@@ -454,3 +464,114 @@ class ChromaVectorDB(VectorDBInterface):
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
+    
+    def delete_collection(self, **kwargs) -> bool:
+        """ 
+        Delete Table or collection supported by the 
+        database and all files associated to
+        it from disk.
+        """
+        collection_name: str = kwargs.get('collection_name', self.collection_name)
+        try:
+            self.client.delete_collection(name=collection_name)
+            print(f"🗑️  Deleted ChromaDB collection: {collection_name}")
+            self.documents = []
+            return True
+        except Exception as e:
+            print(f"❌ Failed to delete collection: {e}")
+            return False
+        
+        
+    def as_langchain_retriever(self, embedding_function, top_k: int = 5):
+        """Convert to LangChain retriever
+
+        Args:
+            embedding_function: A callable that takes a string and returns an embedding vector
+            top_k: Number of documents to retrieve
+
+        Returns:
+            ChromaChainRetriever: A LangChain-compatible retriever
+        """
+        return ChromaChainRetriever(
+            vector_db=self,
+            embedding_function=embedding_function,
+            top_k=top_k
+        )
+
+
+class ChromaChainRetriever(BaseRetriever):
+    """LangChain-compatible retriever for ChromaVectorDB
+    
+    This class wraps ChromaVectorDB to make it compatible with LangChain's retriever interface.
+    Since BaseRetriever is a Pydantic model, it performs strict type validation on all attributes.
+    
+    The nested Config class with 'arbitrary_types_allowed = True' is required because:
+    - vector_db: ChromaVectorDB is a custom class instance (not a standard Pydantic type)
+    - embedding_function: callable is a function/callable object (not a standard Pydantic type)
+    
+    Without this configuration, Pydantic would raise validation errors for these custom types.
+    This tells Pydantic to accept these arbitrary Python objects without transformation.
+    """
+    vector_db: ChromaVectorDB
+    embedding_function: callable
+    top_k: int = 5
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def _get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None
+    ) -> List[Document]:
+        """Retrieve documents relevant to the query
+           1. When LangChain sees retriever in the context
+           2. Calls retriever.get_relevant_documents(query)
+           3. Which internally calls your _get_relevant_documents()
+
+        Args:
+            query: The query string to search for
+            run_manager: Optional callback manager
+
+        Returns:
+            List of relevant documents with similarity scores
+        """
+        chunk_size = self.vector_db.get_max_document_length()
+        print(f"Max document length in vector DB: {chunk_size} characters")
+        query_text_input = query
+        if len(query_text_input) > chunk_size:
+            print(f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
+            query_text_input = query_text_input[:chunk_size]
+
+        # Generate embedding for the query
+        query_embedding = self.embedding_function(query_text_input)
+
+        # Ensure it's a numpy array
+        if not isinstance(query_embedding, np.ndarray):
+            query_embedding = np.array(query_embedding)
+
+        # Search the vector database
+        results = self.vector_db.search(query_embedding, top_k=self.top_k)
+        
+        print(f"\n🔍 Retrieved {len(results)} documents for query '{query_text_input}'")
+        return results
+    
+    def format_list_documents_as_string(self, **kwargs) -> str:
+        """Format a list of Documents into a human-readable string with metadata.
+        
+        Args:
+            results: List of Document objects with page_content and metadata
+            similarity_threshold: Minimum similarity score to include a document (default: 0.8)
+            
+        Returns:
+            Formatted string with each document's content, source, similarity score, and rank
+        """
+        results = kwargs.get('results', [])
+        if not results:
+            return ''
+        context =""
+        for i, doc in enumerate(results, 1):
+            context += doc.page_content + "\n\n"
+        return context
+

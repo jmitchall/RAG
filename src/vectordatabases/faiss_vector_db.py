@@ -23,7 +23,7 @@ class FaissVectorDB(VectorDBInterface):
     - self.softmax_temperature: Temperature parameter for confidence score softmax normalization
     """
 
-    def __init__(self, embedding_dim: int, persist_path: Optional[str] = None, use_gpu: bool = True,
+    def __init__(self, embedding_dim: int =0, persist_path: Optional[str] = None, use_gpu: bool = True,
                  gpu_memory_fraction: float = 0.8, **kwargs):
         super().__init__(embedding_dim, persist_path, **kwargs)
 
@@ -217,10 +217,16 @@ class FaissVectorDB(VectorDBInterface):
                         }
                     )
                     results.append(doc_with_score)
-
+            
             if results:
                 hardware_type = "GPU-accelerated" if self.gpu_available else "CPU"
                 print(f"🔍 Found {len(results)} similar documents ({hardware_type} search)")
+            
+            # L2 (Euclidean) distances between the query embedding and the matched document embedding
+            # Shape: (1, top_k) - the first dimension is for the query batch (always 1 in this code), second is the number of results
+            # Lower distances = more similar documents (since it's measuring distance, not similarity)
+            # Sort in increasing order on distance (most similar first)
+            results.sort(key=lambda doc: doc.metadata.get('distance', 10000.0))
 
             return results
 
@@ -354,6 +360,38 @@ class FaissVectorDB(VectorDBInterface):
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
+    
+    def delete_collection(self, **kwargs) -> bool:
+        """ 
+        Delete Table or collection supported by the 
+        database and all files associated to
+        it from disk.
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        persist_path: str = kwargs.get('persist_path', self.persist_path)
+        try:
+            # Clear in-memory data
+            self.index.reset()
+            self.documents = []
+
+            # Delete persisted files if they exist
+            if self.persist_path:
+                index_file = f"{persist_path}.faiss"
+                docs_file = f"{persist_path}.docs.pkl"
+                config_file = f"{persist_path}.config.pkl"
+
+                for file in [index_file, docs_file, config_file]:
+                    if os.path.exists(file):
+                        os.remove(file)
+                        print(f"🗑️  Deleted file: {file}")
+
+            print(f"✅ Successfully deleted FAISS collection and associated files")
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to delete collection: {e}")
+            return False
 
     def as_langchain_retriever(self, embedding_function, top_k: int = 5):
         """Convert to LangChain retriever
@@ -374,19 +412,18 @@ class FaissVectorDB(VectorDBInterface):
 
 class FaissLangChainRetriever(BaseRetriever):
     """LangChain-compatible retriever for FaissVectorDB
-
+    
     This class wraps FaissVectorDB to make it compatible with LangChain's retriever interface.
     Since BaseRetriever is a Pydantic model, it performs strict type validation on all attributes.
-
+    
     The nested Config class with 'arbitrary_types_allowed = True' is required because:
     - vector_db: FaissVectorDB is a custom class instance (not a standard Pydantic type)
     - embedding_function: callable is a function/callable object (not a standard Pydantic type)
-
+    
     Without this configuration, Pydantic would raise validation errors for these custom types.
     This tells Pydantic to accept these arbitrary Python objects without transformation.
     """
-
-    vector_db: 'FaissVectorDB'
+    vector_db: FaissVectorDB
     embedding_function: callable
     top_k: int = 5
 
@@ -400,6 +437,9 @@ class FaissLangChainRetriever(BaseRetriever):
         run_manager: Optional[CallbackManagerForRetrieverRun] = None
     ) -> List[Document]:
         """Retrieve documents relevant to the query
+           1. When LangChain sees retriever in the context
+           2. Calls retriever.get_relevant_documents(query)
+           3. Which internally calls your _get_relevant_documents()
 
         Args:
             query: The query string to search for
@@ -408,8 +448,15 @@ class FaissLangChainRetriever(BaseRetriever):
         Returns:
             List of relevant documents with similarity scores
         """
+        chunk_size = self.vector_db.get_max_document_length()
+        print(f"Max document length in vector DB: {chunk_size} characters")
+        query_text_input = query
+        if len(query_text_input) > chunk_size:
+            print(f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
+            query_text_input = query_text_input[:chunk_size]
+
         # Generate embedding for the query
-        query_embedding = self.embedding_function(query)
+        query_embedding = self.embedding_function(query_text_input)
 
         # Ensure it's a numpy array
         if not isinstance(query_embedding, np.ndarray):
@@ -417,6 +464,31 @@ class FaissLangChainRetriever(BaseRetriever):
 
         # Search the vector database
         results = self.vector_db.search(query_embedding, top_k=self.top_k)
-
+        
+        print(f"\n🔍 Retrieved {len(results)} documents for query '{query_text_input}'")
         return results
+    
+    def format_list_documents_as_string(self, **kwargs) -> str:
+        """Format a list of Documents into a human-readable string with metadata.
+        
+        Args:
+            results: List of Document objects with page_content and metadata
+            similarity_threshold: Minimum similarity score to include a document (default: 0.8)
+            
+        Returns:
+            Formatted string with each document's content, source, similarity score, and rank
+        """
+        results = kwargs.get('results', [])
+        if not results:
+            return ''
+        context =""
+        for i, doc in enumerate(results, 1):
+            print(f"\n--- Result {i} ---")
+            print(f"Content: {doc.page_content}")
+            print(f"Source: {doc.metadata.get('source', 'unknown')}")
+            print(f"Similarity Score: {doc.metadata.get('similarity_score', 'N/A'):.4f}")
+            print(f"distance Score: {doc.metadata.get('distance', 'N/A'):.4f}")
+            print(f"Search Rank: {doc.metadata.get('search_rank', 'N/A')}")
+            context += doc.page_content + "\n\n"
+        return context
 

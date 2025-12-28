@@ -103,13 +103,16 @@ class VectorDBFactory:
         """
         # For simplicity, assume the db_path contains the type as a prefix
         if '_faiss' in db_path:
-            return FaissVectorDB(0,persist_path=db_path)
+            return FaissVectorDB(persist_path=db_path)
         elif '_qdrant' in db_path:
-            return QdrantVectorDB(0,persist_path=db_path)
+            return QdrantVectorDB(persist_path=db_path)
         elif '_chroma' in db_path:
-            return ChromaVectorDB(0,persist_path=db_path)
+            return ChromaVectorDB(persist_path=db_path)
         else:
-            raise ValueError(f"Cannot determine database type from path: {db_path}")
+            None
+
+
+
 
     @staticmethod
     def get_actual_db_embedding_dim(vector_db: VectorDBInterface) -> int:
@@ -121,4 +124,28 @@ class VectorDBFactory:
         Returns:
             int: Actual embedding dimension
         """
+        if vector_db is None:
+            return None
         return vector_db.get_embedding_dim()
+    
+    @staticmethod
+    def get_available_vector_databases(validated_db: str) -> bool:
+        """ Check and display available vector databases 
+        'faiss' , 'chroma' ,'qdrant'
+        """
+        print(f"🔍 Checking availability of vector databases...")
+        # Show available databases
+        available_dbs = VectorDBFactory.get_available_databases()
+        print("🗃️  Available Vector Databases:")
+        for db_name, info in available_dbs.items():
+            status = "✅" if info['available'] else "❌"
+            gpu = "🚀" if info['gpu_support'] else "💻"
+            print(f"   {status} {gpu} {db_name}: {info['description']}")
+
+        if not available_dbs[validated_db]['available']:
+            print(f"❌ {validated_db} is not available!")
+            print(f"💡 {available_dbs[validated_db]['description']}")
+            return False
+        else:
+            print(f"✅ {validated_db} is available")
+            return True
