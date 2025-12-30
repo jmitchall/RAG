@@ -82,6 +82,13 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
         print(f"✅ Local model is ready to get embeddings")
 
     @property
+    def get_tokenizer(self):
+        """
+        Return the tokenizer used by the embedding model.
+        """
+        return self.tokenizer
+
+    @property
     def max_tokens(self) -> int:
         """
         Return the maximum number of tokens the model can handle.
@@ -244,39 +251,3 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
         return self.embed_documents([text])[0]
     
 
-    # HERE IS AN EXAMPLE OF HOW TO USE THE ABOVE CLASS IN A LANGCHAIN LCEL PIPELINE
-    # Uncomment and run in your application environment
-    # from langchain_core.vectorstores import FAISS
-    # from langchain_core.chat_models import ChatOpenAI
-    # from langchain_core.prompts.chat import ChatPromptTemplate
-    # from langchain_core.chains import RunnablePassthrough
-    # from langchain_core.output_parsers import StrOutputParser
-    #
-    # # 1. Initialize your custom HuggingFace Embedding class
-    # embeddings = HuggingFaceOfflineEmbeddings("sentence-transformers/all-MiniLM-L6-v2")
-
-    # # 2. Create a Vector Store (e.g., using FAISS)
-    # # In a real app, you'd load actual documents here
-    # vectorstore = FAISS.from_texts(
-    #     ["HuggingFace Transformers is a library for NLP models.",
-    #      "LCEL is a declarative way to compose LangChain components."],
-    #     embeddings
-    # )
-    # retriever = vectorstore.as_retriever()
-    # # 3. Define the LCEL Chain
-    # template = """Answer the question based only on the following context:
-    # {context}
-    # Question: {question}
-    # """
-    # prompt = ChatPromptTemplate.from_template(template)
-    # model = ChatOpenAI(model="gpt-4o") # Example model
-    # # This is the LCEL pipeline
-    # chain = (
-    #     {"context": retriever, "question": RunnablePassthrough()}
-    #     | prompt
-    #     | model
-    #     | StrOutputParser()
-    # )
-    # # 4. Invoke the chain
-    # response = chain.invoke("What is HuggingFace Transformers?")
-    # print(response)

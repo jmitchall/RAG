@@ -1,7 +1,119 @@
 from langchain_chroma import Chroma
 from langchain.schema import Document
-from typing import List
+from typing import List, Optional
 from langchain_core.embeddings import Embeddings
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
+
+
+def get_chroma_retriever(
+    chroma_vectorstore_ptr: Chroma,
+    k=5,
+    score_threshold: float = None,
+    search_type: str = "mmr",
+    fetch_k: int = 20,
+    lambda_mult: float = 0.5
+) -> BaseRetriever:
+    """
+    Create a LangChain retriever from a Chroma vector store.
+    Simple Explanation:
+    - This function creates a retriever that can fetch relevant documents from a Chroma vector store.
+    - Supports MMR for diverse results.
+    
+    Example:
+        Input: chroma_vectorstore_ptr, k=5, search_type="mmr"
+        Output: LangChain BaseRetriever object  
+    Args:
+        chroma_vectorstore_ptr (Chroma): Pointer to the Chroma vector store
+        k (int): Number of documents to return
+        score_threshold (float): NOT USED - Chroma returns L2 distances, not 0-1 scores
+        search_type (str): "similarity" for pure relevance, "mmr" for diversity
+        fetch_k (int): For MMR - number of candidates before diversity filtering
+        lambda_mult (float): For MMR - balance between relevance (1.0) and diversity (0.0)
+    Returns:
+        BaseRetriever: A LangChain retriever object.
+    """ 
+    # Create custom retriever wrapper that includes similarity scores
+    class ChromaRetrieverWrapper(BaseRetriever):
+        vectorstore: Chroma
+        top_k: int = 5
+        score_threshold: Optional[float] = None
+        search_type: str = "similarity"
+        fetch_k: int = 20
+        lambda_mult: float = 0.5
+        
+        def get_relevant_documents(self, query: str, *, run_manager: Optional[CallbackManagerForRetrieverRun] = None) -> List[Document]:
+            documents = []
+            
+            if self.search_type == "mmr":
+                # Use MMR for diverse, relevant results
+                print(f"   🔍 Using MMR search (fetch_k={self.fetch_k}, lambda={self.lambda_mult})")
+                docs = self.vectorstore.max_marginal_relevance_search(
+                    query,
+                    k=self.top_k,
+                    fetch_k=self.fetch_k,
+                    lambda_mult=self.lambda_mult
+                )
+                
+                # Compute similarity scores for MMR results to show relevance
+                # Get the query embedding
+                query_embedding = self.vectorstore._embedding_function.embed_query(query)
+                
+                for idx, doc in enumerate(docs):
+                    doc.metadata['search_type'] = 'mmr'
+                    doc.metadata['similarity_score'] = None  # MMR doesn't provide scores
+                    self.update_doc_metadata_cosine_score(doc, query_embedding, idx)
+                    source = doc.metadata.get('source', 'unknown')
+                    cosine_similarity = doc.metadata.get('cosine_similarity', None)
+                    if cosine_similarity is not None:
+                        print(f"   📄 MMR result | Source: {source} | Cosine Similarity: {cosine_similarity:.4f}")
+                    else:
+                        print(f"   📄 MMR result | Source: {source}")
+                    documents.append(doc)
+            else:
+                # Use similarity_search_with_score to get raw distances without normalization warnings
+                search_results = self.vectorstore.similarity_search_with_score(query, k=self.top_k)
+                
+                for doc, distance in search_results:
+                    # Chroma returns L2 distances (lower = more similar)
+                    # Note: Score threshold filtering won't work well with raw distances
+                    # Store both distance and inverted score for compatibility
+                    doc.metadata['distance'] = distance
+                    doc.metadata['similarity_score'] = -distance  # Negative distance (less negative = more similar)
+                    doc.metadata['search_type'] = 'similarity'
+                    source = doc.metadata.get('source', 'unknown')
+                    print(f"   📄 Distance: {distance:.4f} (lower=better) | Source: {source}")
+                    documents.append(doc)
+            
+            return documents
+        
+        def update_doc_metadata_cosine_score(self, doc: Document, query_embedding: List[float], idx: int):
+            """
+            Update document metadata with cosine similarity score to the query.
+            Args:
+                doc (Document): The document to update
+                query_embedding (List[float]): The embedding of the query
+                idx (int): Index of the document in the result set
+            """
+            from numpy import dot
+            from numpy.linalg import norm
+            import numpy as np
+            
+            doc_embedding = self.vectorstore._embedding_function.embed_query(doc.page_content)
+            # Compute cosine similarity
+            cosine_sim = dot(np.array(query_embedding), np.array(doc_embedding)) / (norm(np.array(query_embedding)) * norm(np.array(doc_embedding)) + 1e-10)
+            doc.metadata['similarity_score'] = cosine_sim
+            doc.metadata['result_index'] = idx + 1  # 1-based index for display
+
+
+    return ChromaRetrieverWrapper(
+        vectorstore=chroma_vectorstore_ptr,
+        top_k=k,
+        score_threshold=score_threshold,
+        search_type=search_type,
+        fetch_k=fetch_k,
+        lambda_mult=lambda_mult
+    )
 
 def create_chroma_vectore_store(collection_name: str,  vector_db_persisted_path: str)-> Chroma:
     """     

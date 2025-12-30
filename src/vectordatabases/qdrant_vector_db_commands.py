@@ -228,19 +228,24 @@ def qdrant_create_from_documents(qdrant_client_ptr: QdrantClientSmartPointer, co
     return vector_db
     
 
-def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5):
+def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5, 
+                        score_threshold: float = None, search_type: str = "mmr") -> BaseRetriever:
     """
     Get a Qdrant retriever for searching the vector database.
     Simple Explanation:
     - This function sets up a retriever to search through the Qdrant vector database.
+    - Supports filtering by minimum similarity score and MMR for diverse results.
+    
     Example:
-        Input: qdrant_client, "my_collection", embeddings, k=5
+        Input: qdrant_client, "my_collection", embeddings, k=5, score_threshold=0.7
         Output: Qdrant retriever object
     Args:
         qdrant_client (QdrantClient): The Qdrant client object.
         collection_name (str): The name of the collection to search.
         embeddings: Embedding model used for vectorization.
         k (int): Number of top results to retrieve.
+        score_threshold (float): Minimum similarity score (0-1). Only return docs above this threshold.
+        search_type (str): "similarity" for pure relevance, "mmr" for diversity
     Returns:
         Qdrant retriever object.
     """
@@ -260,11 +265,77 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5):
     class QdrantRetrieverWrapper(BaseRetriever):
 
         vectorstore: Qdrant
+        embeddings: object  # Store embeddings for computing scores
         top_k: int = 5
+        score_threshold: Optional[float] = None
+        search_type: str = "mmr"
         
         def get_relevant_documents(self, query: str, *, run_manager: Optional[CallbackManagerForRetrieverRun] = None) -> List[Document]:
             print(f"🔍 get_relevant_documents called with vectorstore type: {type(self.vectorstore)}")
-            return self.vectorstore.similarity_search(query, k=self.top_k)
+
+            documents = []
+            
+            if self.search_type == "mmr":
+                # Use MMR for diverse results (Qdrant supports this)
+                print(f"   🔍 Using MMR search")
+                docs = self.vectorstore.max_marginal_relevance_search(query, k=self.top_k)
+                query_embedding = self.embeddings.embed_query(query)
+                for idx, doc in enumerate(docs):
+                        doc.metadata['search_type'] = 'mmr'
+                        doc.metadata['similarity_score'] = None  # MMR doesn't provide scores
+                        self.update_doc_metadata_cosine_score(doc, query_embedding, idx)
+                        source = doc.metadata.get('source', 'unknown')
+                        similarity_score = doc.metadata.get('similarity_score', None)
+                        if similarity_score is not None:
+                            print(f"   📄 MMR result | Source: {source} | Similarity Score: {similarity_score:.4f}")
+                        else:
+                            print(f"   📄 MMR result | Source: {source}")
+                        documents.append(doc)
+            else:
+                search_results = self.vectorstore.similarity_search_with_relevance_scores(query, k=self.top_k)
+                
+                for doc, score in search_results:
+                    # Apply score threshold filtering if specified
+                    if self.score_threshold is not None and score < self.score_threshold:
+                        print(f"   ⏭️  Skipping doc with score {score:.4f} < threshold {self.score_threshold}")
+                        continue
+                        
+                    doc.metadata['similarity_score'] = score
+                    doc.metadata['search_type'] = 'similarity'
+                    source = doc.metadata.get('source', 'unknown')
+                    print(f"   📄 Similarity: {score:.4f} | Source: {source}")
+                    documents.append(doc)
+            
+            
+            if self.score_threshold and len(documents) == 0:
+                print(f"   ⚠️  No documents met the score threshold of {self.score_threshold}")
+            
+            return documents
+        
+        def update_doc_metadata_cosine_score(self, doc: Document, query_embedding: List[float], idx: int):
+                """
+                Update document metadata with cosine similarity score to the query.
+                Args:
+                    doc (Document): The document to update
+                    query_embedding (List[float]): The embedding of the query
+                    idx (int): Index of the document in the result set
+                """
+                # Get document embedding from vectorstore
+                # Compute cosine similarity or distance
+                try:
+                    doc_embedding = self.embeddings.embed_query(doc.page_content)
+                    # Compute cosine similarity
+                    from numpy import dot
+                    from numpy.linalg import norm
+                    import numpy as np
+                    
+                    cosine_similarity = dot(np.array(query_embedding), np.array(doc_embedding)) / (norm(np.array(query_embedding)) * norm(np.array(doc_embedding)))
+                    doc.metadata['similarity_score'] = float(cosine_similarity)
+                except Exception as e:
+                    print(f"   ⚠️  Warning: Could not compute cosine similarity for doc idx {idx}: {e}")
+                    doc.metadata['similarity_score'] = None
+
+
         
         def format_list_documents_as_string(self, **kwargs) -> str:
             """Format a list of Documents into a human-readable string with metadata.
@@ -284,7 +355,13 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5):
                 context += doc.page_content + "\n\n"
             return context
     
-    retriever = QdrantRetrieverWrapper(vectorstore = loaded_vectorstore, top_k=k)
+    retriever = QdrantRetrieverWrapper(
+        vectorstore=loaded_vectorstore,
+        embeddings=embeddings,  # Pass embeddings explicitly
+        top_k=k,
+        score_threshold=score_threshold,
+        search_type=search_type
+    )
     return retriever
 
 

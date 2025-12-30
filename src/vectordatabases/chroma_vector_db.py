@@ -572,6 +572,24 @@ class ChromaChainRetriever(BaseRetriever):
             return ''
         context =""
         for i, doc in enumerate(results, 1):
+            print(self.dict_to_str(doc.metadata))
             context += doc.page_content + "\n\n"
         return context
+    
+    def dict_to_str(self, d: dict) -> str:
+        """Convert a dictionary to a formatted string.
+        
+        Args:
+            d: Dictionary to convert
+            
+        Returns:
+            Formatted string representation of the dictionary
+        """
+        if not d:
+            return ''
+        context =""
+        for key, value in d.items():
+            context += f"{key}: {value}\n"
+        return context
+
 

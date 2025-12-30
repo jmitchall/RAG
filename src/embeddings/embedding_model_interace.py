@@ -95,3 +95,14 @@ class EmbeddingModelInterface(ABC):
             Dict[str, int]: Mapping of model names to their token limits
         """
         raise NotImplementedError
+    
+    def calculate_avg_words_per_token(self, documents: List[str]) -> float:
+        """
+        Calculate average words per token using actual tokenizer.
+        
+        Returns:
+            float: Average words per token (typically ~0.75 for English)
+        """
+        return 0.75  # Default fallback
+    
+   

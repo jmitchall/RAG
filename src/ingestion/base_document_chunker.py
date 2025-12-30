@@ -73,7 +73,7 @@ class BaseDocumentChunker(ABC):
     
     
     @abstractmethod
-    def calculate_optimal_chunk_parameters_given_max_tokens(self, max_tokens: int) -> Tuple[int, int]:
+    def calculate_optimal_chunk_parameters_given_max_tokens(self, max_tokens: int , avg_words_per_token: float) -> Tuple[int, int]:
         """
         Calculate optimal chunk size and overlap based on max tokens.
         
@@ -85,9 +85,8 @@ class BaseDocumentChunker(ABC):
         """
         pass
     
-    @staticmethod
     @abstractmethod
-    def validate_and_fix_chunks(chunk_texts: List[str], max_tokens: int) -> List[str]:
+    def validate_and_fix_chunks(self, chunk_texts: List[str], max_tokens: int) -> List[str]:
         """
         Additional validation and fixing of chunks that might still be too long.
         
@@ -114,24 +113,14 @@ class BaseDocumentChunker(ABC):
         else:
             return 1024  # Suitable for large chunks
     
-    def calculate_avg_words_per_token(self) -> float:
-        """
-        Estimate average words per token based on chunk size.
-        Must be implemented by subclasses to handle their specific document format.
-        
-        Returns:
-            float: Estimated average words per token.
-        """
-        pass
     
-    def calculate_max_char_sub_tokens_per_word(self) -> int:
+    def calculate_max_char_sub_tokens_per_word(self, avg_words_per_token) -> int:
         """
         Estimate maximum character sub-tokens per word based on chunk size.
         
         Returns:
             int: Estimated maximum character sub-tokens per word.
         """
-        avg_words_per_token = self.calculate_avg_words_per_token()
         max_doc_words = self._get_max_document_words()
         return int(max_doc_words / avg_words_per_token if avg_words_per_token > 0 else 0)
     
