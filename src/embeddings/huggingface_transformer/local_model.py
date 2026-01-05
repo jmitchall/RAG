@@ -38,6 +38,26 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
 
         self.load_local_model()
 
+
+    def calculate_avg_words_per_token(self, documents: List[str]) -> float:
+        """
+        Calculate average words per token using actual tokenizer.
+        
+        Returns:
+            float: Average words per token (typically ~0.75 for English)
+        """
+        if not documents:
+            return 0.75  # Default fallback
+        
+        ratios = []
+        for doc in documents[:10]:  # Sample first 10 docs for speed
+            if len(doc) > 0:
+                word_count = len(doc.split())
+                token_count = len(self.tokenizer.encode(doc))
+                ratios.append(word_count / token_count)
+        
+        return sum(ratios) / len(ratios) if ratios else 0.75
+
     @property
     def safe_embedding_dim(self) -> int:
         return self._safe_embedding_dim
@@ -222,7 +242,7 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
                 "safe_max": 250
             },
             "BAAI/bge-large-en-v1.5": {
-                "max_context": 608,
+                "max_context": 512,
                 "recommended_max": 350,
                 "safe_max": 250
             },

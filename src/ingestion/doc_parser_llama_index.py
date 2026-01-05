@@ -1,7 +1,6 @@
 import os
 from llama_index.core import SimpleDirectoryReader
-from llama_index.core.node_parser import SemanticSplitterNodeParser
-from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import SemanticSplitterNodeParser, SentenceSplitter, HierarchicalNodeParser 
 from typing import List, Optional, Tuple, Callable
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.schema import Document
@@ -165,45 +164,52 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
         Returns: 
             SentenceSplitter or SemanticSplitterNodeParser: Preferred node parser.
         """
-        embed_model: Optional[BaseEmbedding] = self.kwargs.get("embed_model",None) #: (BaseEmbedding): embedding model to use for semantic splitting
-        if not embed_model:
-            return SentenceSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
-        
-       
-        breakpoint_percentile_threshold: Optional[int] = self.kwargs.get("breakpoint_percentile_threshold",95) #: (int): dissimilarity threshold for creating semantic breakpoints, lower value will generate more nodes
-        buffer_size: Optional[int] = self.kwargs.get("buffer_size",1) #: (int): number of sentences to group together when evaluating semantic similarity
-        sentence_splitter: Optional[Callable[[str], List[str]]] = self.kwargs.get("sentence_splitter", None) #: (Callable): optional custom sentence splitter function
-        include_metadata: bool = self.kwargs.get("include_metadata",True) #: (bool): whether to include metadata in nodes
-        include_prev_next_rel: bool = self.kwargs.get("include_prev_next_rel",True) #: (bool): whether to include prev/next relationships
-        id_func: Optional[Callable[[int, Document], str]] = self.kwargs.get("id_func",None) #: (Callable): optional function to generate unique IDs for nodes
-        if sentence_splitter is None:
-            return SemanticSplitterNodeParser(
-                buffer_size=buffer_size,
-                embed_model=embed_model,
-                breakpoint_percentile_threshold=breakpoint_percentile_threshold,
-                include_metadata=include_metadata,
-                include_prev_next_rel=include_prev_next_rel,
-                id_func=id_func
-                )
-        else:
-            return SemanticSplitterNodeParser(
-                buffer_size=buffer_size,
-                embed_model=embed_model,
-                breakpoint_percentile_threshold=breakpoint_percentile_threshold,
-                sentence_splitter=sentence_splitter,
-                include_metadata=include_metadata,
-                include_prev_next_rel=include_prev_next_rel,
-                id_func=id_func
-                )
+        node_parser_type =  self.kwargs.get("node_parser_type","sentence")
+        match node_parser_type:
+            case "sentence":
+                return SentenceSplitter.from_defaults(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
+            case "hiearchial":
+                top_layer = self.chunk_size
+                next_layer = int(top_layer/2)
+                last_layer = int(next_layer/2)
+                chunk_size_list = [top_layer , next_layer, last_layer]
+                return HierarchicalNodeParser.from_defaults(chunk_sizes=chunk_size_list , chunk_overlap = self.chunk_overlap)
+            case "semantic":
+                embed_model: Optional[BaseEmbedding] = self.kwargs.get("embed_model",None) #: (BaseEmbedding): embedding model to use for semantic splitting
+                
+                if not embed_model:
+                    return SentenceSplitter.from_defaults(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
+                
+            
+                breakpoint_percentile_threshold: Optional[int] = self.kwargs.get("breakpoint_percentile_threshold",95) #: (int): dissimilarity threshold for creating semantic breakpoints, lower value will generate more nodes
+                buffer_size: Optional[int] = self.kwargs.get("buffer_size",1) #: (int): number of sentences to group together when evaluating semantic similarity
+                sentence_splitter: Optional[Callable[[str], List[str]]] = self.kwargs.get("sentence_splitter", None) #: (Callable): optional custom sentence splitter function
+                include_metadata: bool = self.kwargs.get("include_metadata",True) #: (bool): whether to include metadata in nodes
+                include_prev_next_rel: bool = self.kwargs.get("include_prev_next_rel",True) #: (bool): whether to include prev/next relationships
+                id_func: Optional[Callable[[int, Document], str]] = self.kwargs.get("id_func",None) #: (Callable): optional function to generate unique IDs for nodes
+                if sentence_splitter is None:
+                    return SemanticSplitterNodeParser.from_defaults(embed_model=embed_model,
+                        breakpoint_percentile_threshold=breakpoint_percentile_threshold,
+                        buffer_size=buffer_size,
+                        include_metadata=include_metadata,
+                        include_prev_next_rel=include_prev_next_rel,
+                        id_func=id_func
+                        )
+                else:
+                    return SemanticSplitterNodeParser.from_defaults(
+                        buffer_size=buffer_size,
+                        embed_model=embed_model,
+                        breakpoint_percentile_threshold=breakpoint_percentile_threshold,
+                        sentence_splitter=sentence_splitter,
+                        include_metadata=include_metadata,
+                        include_prev_next_rel=include_prev_next_rel,
+                        id_func=id_func
+                        )
 
     def chunk_documents(self, documents: List[Document] = None) -> List[LangchainDocument]:
         node_parser = self.get_preferred_node_parser()
-        if isinstance(node_parser, SentenceSplitter):
-            nodes = node_parser.get_nodes_from_documents(documents, show_progress=False)
-        elif isinstance(node_parser, SemanticSplitterNodeParser):
-            nodes = node_parser.get_nodes_from_documents(documents, show_progress=False)
-        else:
-            raise ValueError("Unsupported node parser type")
+        # in heirarchical this gets ALL nodes (parent + child + leaf) - most comprehensive
+        nodes = node_parser.get_nodes_from_documents(documents, show_progress=False)
         return self.to_langchain_format(nodes)
 
     def calculate_optimal_chunk_size(self, max_tokens: int, words_per_token: float) -> Tuple[int, int]:

@@ -1,7 +1,15 @@
 
 import sys
+import subprocess
 import gc
 import warnings
+# Configure logging
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 # =============================================================================
 # CLEANUP FUNCTIONS - Prevent vLLM engine core crash on exit
 # =============================================================================
@@ -81,3 +89,67 @@ def suppress_vllm_shutdown_errors():
     # Register this function to run at the very end of Python execution
     # It will hide any error messages that occur during final cleanup
     atexit.register(silent_exit)
+
+def check_gpu_memory_status() -> dict:
+        """
+        Check current GPU memory usage to detect potential memory issues.
+        
+        Returns:
+            dict: GPU memory information including total, used, and free memory
+        """
+        try:
+            result = subprocess.run(
+                ['nvidia-smi', '--query-gpu=memory.total,memory.used,memory.free', '--format=csv,noheader,nounits'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                memory_info = result.stdout.strip().split(', ')
+                total, used, free = map(int, memory_info)
+                return {
+                    'total_mb': total,
+                    'used_mb': used,
+                    'free_mb': free,
+                    'free_ratio': free / total,
+                    'used_ratio': used / total
+                }
+        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError) as e:
+            logger.warning(f"Could not retrieve GPU memory status: {e}")
+        
+        return {'total_mb': 0, 'used_mb': 0, 'free_mb': 0, 'free_ratio': 0.0, 'used_ratio': 0.0}
+
+def force_gpu_memory_cleanup():
+        """
+        Force comprehensive GPU memory cleanup.
+        
+        This method performs aggressive memory cleanup to free up GPU memory
+        that may be held by previous VLLM instances or other processes.
+        """
+        logger.info("🧹 Performing GPU memory cleanup...")
+        
+        try:
+            # Clear Python's garbage collector
+            gc.collect()
+            
+            # Try to import torch and clear CUDA cache if available
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                    logger.info("✅ Cleared PyTorch CUDA cache")
+            except ImportError:
+                logger.info("PyTorch not available, skipping CUDA cache clear")
+            
+            # Force system memory cleanup
+            try:
+                # On Linux, try to drop caches if we have permission
+                subprocess.run(['sync'], check=False, timeout=5)
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+            logger.info("✅ GPU memory cleanup completed")
+            
+        except Exception as e:
+            logger.warning(f"⚠️  GPU memory cleanup encountered issue: {e}")

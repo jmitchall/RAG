@@ -3,10 +3,10 @@ from qdrant_client.models import Distance, VectorParams
 from langchain_qdrant import QdrantVectorStore as Qdrant
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
-
+from llama_index.vector_stores.qdrant import QdrantVectorStore
 from langchain.schema import Document
 from typing import List, Optional
-
+# https://developers.llamaindex.ai/python/examples/vector_stores/qdrantindexdemo/
 
 class QdrantClientSmartPointer:
     """

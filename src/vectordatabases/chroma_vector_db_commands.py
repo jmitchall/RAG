@@ -4,7 +4,8 @@ from typing import List, Optional
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
-
+from llama_index.vector_stores.chroma import ChromaVectorStore
+# https://developers.llamaindex.ai/python/examples/vector_stores/chromaindexdemo/
 
 def get_chroma_retriever(
     chroma_vectorstore_ptr: Chroma,

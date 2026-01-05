@@ -4,7 +4,8 @@ from typing import List, Optional
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
-
+from llama_index.vector_stores.faiss import FaissVectorStore
+#https://developers.llamaindex.ai/python/examples/vector_stores/faissindexdemo/
 
 class FAISSVectorStore:
     def __init__(self , faiss_vectorstore: FAISS, persist_path: str = None):
