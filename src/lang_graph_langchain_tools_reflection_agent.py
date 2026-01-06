@@ -4,16 +4,16 @@ from abc import ABC
 from typing import List,  Annotated, TypedDict
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from pydantic import BaseModel, Field
-from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
 import os
 from inference.vllm_srv.cleaner import check_gpu_memory_status ,force_gpu_memory_cleanup
 import traceback
 from langchain.output_parsers import PydanticOutputParser
 import json
 import re
-from langchain_core.tools import tool
+from vectordatabases.refresh_question_context_tool import RefreshQuestionContextTool, RefreshQuestionContextInput
 from langchain_core.runnables import RunnableLambda
 from inference.vllm_srv.minstral_langchain import create_vllm_chat_model
+from langchain_core.tools import BaseTool
 
 # Configure logging
 import logging
@@ -81,14 +81,8 @@ class VectorDBContextResponse(BaseModel):
       
 
 class ReflectionAgent(ABC):
-    # Class-level embeddings - shared across all instances
-    embeddings = None
-    similarity_threshold =0.7
-
-    def __init__(self, brain, root_path = "/home/jmitchall/vllm-srv" ,  similarity_threshold:float=0.65, **kwargs):
+    def __init__(self, brain, root_path = "/home/jmitchall/vllm-srv" , **kwargs):
         self.llm =brain
-        ReflectionAgent.similarity_threshold =similarity_threshold
-        ReflectionAgent.embeddings =HuggingFaceOfflineEmbeddings(model_name="BAAI/bge-large-en-v1.5")
         # Create Generation Prompt for answer
         self.generation_chain = self.get_generation_chain()
         # Create Reflection Prompt for Answer Evaluation
@@ -224,183 +218,50 @@ class ReflectionAgent(ABC):
             question=question,
             messages=[HumanMessage(content=question)] if question else []
         )
-    
-    @staticmethod
-    def get_retriever_and_vector_stores( vdb_type:str, vector_db_persisted_path:str, 
-                                    collection_ref:str, retriever_embeddings) :
-        from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist ,get_quadrant_client, get_qdrant_retriever
-        from vectordatabases.fais_vector_db_commands import create_faiss_vectorstore, get_faiss_retriever
-        from vectordatabases.chroma_vector_db_commands import get_chroma_vectorstore, get_chroma_retriever
-        langchain_retriever = None
-        qdrant_client: QdrantClientSmartPointer = None
-        # test persisted vector store loading and retriever creation
-        print(
-            f"\n🔍 Testing loading of persisted vector store for collection '{collection_ref}' from path: {vector_db_persisted_path} ...")
-        match vdb_type:
-            case "qdrant":
-                # Reconnect to the persisted Qdrant database
-                qdrant_client: QdrantClientSmartPointer = get_quadrant_client(vector_db_persisted_path)
-                if quadrant_does_collection_exist(qdrant_client, collection_ref):
-                    langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref, embeddings=retriever_embeddings, k=5)
-                    print(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
-                else:
-                    print(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
-                    langchain_retriever = None
-            case "faiss":
-                loaded_vectorstore_wrapper = create_faiss_vectorstore(
-                    vector_db_persisted_path,
-                    retriever_embeddings
-                )
-                langchain_retriever = get_faiss_retriever(loaded_vectorstore_wrapper, k=5)
-            case "chroma": 
-                loaded_vectorstore = get_chroma_vectorstore(collection_ref, vector_db_persisted_path, 
-                                                            retriever_embeddings)
-                langchain_retriever =  get_chroma_retriever(loaded_vectorstore, k=5)
-            case _:
-                raise ValueError(
-                    f"Unsupported DATABASE_TYPE: {vdb_type}. Supported types are 'qdrant', 'faiss', 'chroma'.")
-        return langchain_retriever, qdrant_client
-    
-    @staticmethod
-    def get_retriever( collection_name:str, dbtype:str , root_path:str  ):
-         if dbtype and collection_name and root_path:
-            dbtype=  dbtype.lower()
-            vector_db_persisted_path =f"{root_path}/langchain_{collection_name}_{dbtype}"
-            #check if directory exists
-            if os.listdir(vector_db_persisted_path):
-                return ReflectionAgent.get_retriever_and_vector_stores(dbtype, vector_db_persisted_path , collection_name, ReflectionAgent.embeddings)
-            else:
-                raise ValueError(f" No Directory {vector_db_persisted_path}")
 
-    @staticmethod
-    def format_list_documents_as_string(self, **kwargs) -> str:
-        """Format a list of Documents into a human-readable string with metadata.
-        
-        Args:
-            results: List of Document objects with page_content and metadata
-            similarity_threshold: Minimum similarity score to include a document (default: 0.8)
-            
-        Returns:
-            Formatted string with each document's content, source, similarity score, and rank
-        """
-        results = kwargs.get('results', [])
-        if not results:
-            return ''
-        context =""
-        for i, doc in enumerate(results, 1):
-            
-            similarity = doc.metadata.get("similarity_score", .7)
-            if similarity < ReflectionAgent.similarity_threshold:
-                print(f" Skipping :{ doc.metadata.get("source")}, page:{doc.metadata.get("page")} based on Threshold {ReflectionAgent.similarity_threshold } ")
-                continue
-            context += doc.page_content + f"\n\n----------end source {i}"
-
-        return context
-
-
-    @tool
-    def refresh_question_context ( question, sources:List[str], db_type:str , root_path:str):
-        """ Takes in a {question} and converts the following context {sources}
-A) Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond
-B) Monster Manual - Dungeons & Dragons - Sources - D&D Beyond
-C) Player’s Handbook - Dungeons & Dragons - Sources - D&D Beyond
-D) Horror Adventures - Van Richten’s Guide to Ravenloft - Dungeons & Dragons - Sources - D&D Beyond
-E) Vampire-the-Masquerade
-and one of the vector database types {db_type} in the list of choices "qdrant","faiss", or "qdrant"
-in order to generate a {context} associated to the {question}
-
-        Args:
-            sources: Sources ranging from 
-                "Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond" ,
-                "Vampire-the-Masquerade",
-                "Monster Manual - Dungeons & Dragons - Sources - D&D Beyond",
-                "Horror Adventures - Van Richten’s Guide to Ravenloft - Dungeons & Dragons - Sources - D&D Beyond",
-                "Player’s Handbook - Dungeons & Dragons - Sources - D&D Beyond"
-            db_type: Vector database types types are "qdrant","faiss", or "qdrant"
-            root_path: vector db root path 
-        Returns: a String indicating the USER'S QUERY along with the CONTEXT that should be considered 
-        """
-        collection_names = {
-            "Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond" : "dnd_dm",
-            "Vampire-the-Masquerade":"vtm",
-            "Monster Manual - Dungeons & Dragons - Sources - D&D Beyond": "dnd_mm",
-            "Horror Adventures - Van Richten’s Guide to Ravenloft - Dungeons & Dragons - Sources - D&D Beyond": "dnd_raven",
-            "Player’s Handbook - Dungeons & Dragons - Sources - D&D Beyond": "dnd_player",
-        }
-
-        if question:
-            context = ""
-            all_retrieved_docs = []
-            for src in sources:
-                collection_name= collection_names[src]
-                retriever, temp_ptr = ReflectionAgent.get_retriever(collection_name =collection_name , dbtype=db_type, root_path=root_path)
-                if retriever:
-                    retrieved_docs = retriever.invoke(question)
-                    all_retrieved_docs.extend(retrieved_docs)
-                    logger.info(f"Retrieved {len(retrieved_docs)} documents for context")
-
-            context = ReflectionAgent.format_list_documents_as_string(results=all_retrieved_docs)
-        return context
-        
-
-
-    def execute_tool_and_populate_context(self, inputs):
-            """Execute tool through LLM and extract result to populate context.
-            will receive in
-
-            Args:
-                inputs: {
-                        "question": question,
-                        "messages": last_message,
-                        "sources":""
-                        }
-            """
-            question = inputs.get('question', '')
-            db_type = inputs.get('db_type', '')
-            messages = inputs.get('messages', [])
-            sources = inputs.get('sources', [])
-            
-            # Create a prompt that encourages the LLM to use the tool
-            tool_prompt = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(
-                    "You need to get context for this question: {question}. "
-                    "Use the refresh_question_context tool with appropriate root_path: {root_path},"
-                    "db_type: {db_type}, and sources: {sources}"
-                ),
-                MessagesPlaceholder(variable_name="messages")
-            ])
-            
-            # Use manual tool execution instead of bind_tools to prevent memory issues
-            # tools = [self.refresh_question_context]
-            # llm_with_tools = self.llm.bind_tools(tools)  # This creates new instances
-            
-            # Get LLM response without tool binding to prevent memory leaks
-            manual_chain = tool_prompt | self.llm
-            
-            # Execute tool directly instead of through LLM to avoid memory issues
-            logger.info("Executing context retrieval manually to prevent memory leaks")
-            self.context = ""
-            try:
-                # Direct tool execution with provided parameters
-                tool_args = {
-                    'question': question,
-                    'sources': sources,
-                    'db_type': db_type,
-                    'root_path': self.root_path
+    def handle_tool_calls(self, message: AIMessage, tools: List[BaseTool]) -> dict:
+            """Process tool calls from the LLM and invoke matching tools"""
+            if not hasattr(message, 'tool_calls') or not message.tool_calls:
+                # No tool calls, return basic structure
+                return {
+                    "question": self.question or "",
+                    "context": self.context or "",
+                    "messages": [message]
                 }
-                self.context = self.refresh_question_context.invoke(tool_args)
-                logger.info(f"Successfully retrieved context: {len(self.context)} characters")
-            except Exception as tool_error:
-                logger.warning(f"Tool execution failed: {tool_error}")
-                self.context = "Context retrieval failed due to memory constraints."
             
-            # Return inputs with populated context
+            # Create a mapping of tool names to tool instances
+            tool_map = {tool.name: tool for tool in tools}
+            
+            for tool_call in message.tool_calls:
+                tool_name = tool_call['name']
+                tool_args = tool_call['args']
+                
+                if tool_name in tool_map:
+                    try:
+                        tool_instance = tool_map[tool_name]
+                        # Invoke the tool with the provided arguments
+                        result = tool_instance._run(**tool_args)
+                        print(f"✅ Tool '{tool_name}' executed successfully")
+                        
+                        # Update agent's context and question from tool result
+                        if isinstance(result, dict):
+                            if 'context' in result:
+                                self.context = result['context']
+                            if 'question' in result:
+                                self.question = result['question']
+                        
+                    except Exception as e:
+                        print(f"❌ Error executing tool '{tool_name}': {str(e)}")
+                else:
+                    print(f"⚠️ Tool '{tool_name}' not found in available tools")
+            
+            # Return the input format expected by answer_generation_prompt
             return {
-                'question': question,
-                'context': self.context,
-                'messages': messages,
+                "question": self.question or "",
+                "context": self.context or "",
+                "messages": [message]
             }
-      
+    
     def get_generation_chain(self): 
         answer_generation_prompt = ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template("""You are an expert Dungeuns and Dragon Game Master. 
@@ -413,6 +274,8 @@ in order to generate a {context} associated to the {question}
     ============
                                                           
     by first taking into consideration the following 
+    
+    CONTEXT:
     ============
     {context}
     ============
@@ -455,8 +318,12 @@ in order to generate a {context} associated to the {question}
         answer_generation_prompt = answer_generation_prompt.partial(
             format_instructions=answer_generation_parser.get_format_instructions()
         )
-        tool_executor = RunnableLambda(self.execute_tool_and_populate_context)
-        return tool_executor |answer_generation_prompt | self.llm 
+
+        context_retrieval_prompt = ChatPromptTemplate.from_messages([
+        ("human", "{input} "), MessagesPlaceholder(variable_name="messages")])
+        tools =[RefreshQuestionContextTool()]
+        llm_with_tools = self.llm.bind_tools(tools)  # This creates new instances
+        return context_retrieval_prompt | llm_with_tools | RunnableLambda(lambda x: self.handle_tool_calls(x, tools))| answer_generation_prompt | RunnableLambda(lambda x: llm_with_tools.unbind_tools(x)) | llm_with_tools 
     
     def get_reflection_chain(self):
         generated_reflection_prompt = ChatPromptTemplate.from_messages([
@@ -520,6 +387,7 @@ in order to generate a {context} associated to the {question}
         return generated_reflection_prompt | self.llm 
 
 
+
 def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
     """
     In LangGraph Agent Flows are represented via Agent WorkFolws where 
@@ -541,15 +409,18 @@ def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
         logger.info("Invoking generation chain...")
         last_message =  [ ai_messages[-1] ]
         
-        generated_response_output = agent_components.generation_chain.invoke({
-                "question": question,
-                "messages": last_message,
-                "sources":"""
+        generated_response_output = agent_components.generation_chain.invoke(
+            {
+            "input" :f"""
+You need to get context for this question: {question}. 
+Use the refresh_question_context tool with appropriate root_path: {agent_components.root_path},
+db_type: qdrant, and sources:
 1) Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond
 2) Monster Manual - Dungeons & Dragons - Sources - D&D Beyond
 3) Player’s Handbook - Dungeons & Dragons - Sources - D&D Beyond
 4) Horror Adventures - Van Richten’s Guide to Ravenloft - Dungeons & Dragons - Sources - D&D Beyond
-"""
+""",        
+            "messages": last_message
             }
         )
         logger.info("Generation successful")

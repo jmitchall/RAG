@@ -193,9 +193,10 @@ def calculate_avg_words_per_token(documents: List[Document], tokenizer) -> float
     
     ratios = []
     for doc in documents[:10]:  # Sample first 10 docs for speed
-        if len(doc.text) > 0:
-            word_count = len(doc.text.split())
-            token_count = len(tokenizer.encode(doc.text))
+        text = doc.page_content if hasattr(doc, 'page_content') else doc.text
+        if len(text) > 0:
+            word_count = len(text.split())
+            token_count = len(tokenizer.encode(text))
             ratios.append(word_count / token_count)
     
     return sum(ratios) / len(ratios) if ratios else 0.75

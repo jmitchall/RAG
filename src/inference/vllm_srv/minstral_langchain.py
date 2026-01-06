@@ -224,7 +224,7 @@ class VLLMChatModel(BaseChatModel):
     # Tool calling configuration
     tools: List[Dict[str, Any]] = Field(default_factory=list, description="Bound tools for this model")
     tool_choice: Optional[str] = Field(default=None, description="Tool choice strategy")
-    
+    ignore_tools:bool = Field(default=False, description="Allow tool parsing and definition")
     # Pydantic Configuration Class
     # ============================
     # This Config class tells Pydantic (the data validation library that LangChain uses)
@@ -274,6 +274,13 @@ class VLLMChatModel(BaseChatModel):
         """Get identifying parameters by looking up self.vllm_model """
         return {"model_name": getattr(self.vllm_model, 'model', 'unknown')}
 
+    
+    def unbind_tools(self, pass_through):
+        """Remove tool binding from the model."""
+        self.ignore_tools = True
+        return pass_through
+
+
     def _generate(
         self,
         messages: List[BaseMessage],
@@ -287,15 +294,19 @@ class VLLMChatModel(BaseChatModel):
         prompt = messages_to_mistral_prompt(messages)
         
         # Add tool instructions if tools are bound
-        if self.tools:
+        if self.tools and not self.ignore_tools:
             prompt = add_tool_instructions_to_prompt(prompt, self.tools)
         
         # Generate response using VLLM
         try:
             response_text = self.vllm_model.invoke(prompt, stop=stop, **kwargs)
             
-            # Parse response for tool calls
-            tool_calls, clean_content = parse_tool_calls(response_text)
+            if self.ignore_tools:
+                tool_calls =[]
+                clean_content = response_text
+            else:
+                # Parse response for tool calls
+                tool_calls, clean_content = parse_tool_calls(response_text)
             
             # Create AIMessage with tool calls
             ai_message = AIMessage(
@@ -335,7 +346,7 @@ class VLLMChatModel(BaseChatModel):
         logger.info(f"🔧 Binding {len(formatted_tools)} tools to existing VLLMChatModel instance")
         self.tools = formatted_tools
         self.tool_choice = tool_choice
-        
+        self.ignore_tools = False
         # Return self instead of creating new instance to prevent memory leaks
         return self
 

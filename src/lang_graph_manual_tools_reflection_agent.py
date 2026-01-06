@@ -88,7 +88,6 @@ class ReflectionAgent(ABC):
         # Create Reflection Prompt for Answer Evaluation
         self.reflection_chain= self.get_reflection_chain()
         # create Context query Chain
-        self.context_chain=self.get_vector_db_context_chain()
         self.count = 0
         self.embeddings = HuggingFaceOfflineEmbeddings(model_name=embedding_model)
         self.DATABASE_TYPE = kwargs.get("DATABASE_TYPE")
@@ -312,36 +311,6 @@ CONTEXT START:=======================================
         return context
 
 
-    def get_vector_db_context_chain(self):
-        context_generation_prompt = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template("""generate context associated to the 
-    USER's QUERY
-    =====
-    {question} 
-    =====
-                                                          
-    Using the the vector database types {db_type}   
-                                                        
-    Example of CORRECT format:
-    {{
-        "context": "Summary of context used"
-    }}
-
-    {format_instructions}
-        """),
-                # This is used to inject the actual content or message that the post will be based on.  
-                # The placeholder will be populated with the user's request at runtime.
-                MessagesPlaceholder(variable_name="messages")  
-            ])
-        context_generation_parser = PydanticOutputParser(pydantic_object=VectorDBContextResponse)
-        
-        # Add format instructions to the prompt
-        answer_generation_prompt = context_generation_prompt.partial(
-            format_instructions=context_generation_parser.get_format_instructions()
-        )
-        tools = [ self.refresh_question_context ]
-        llm_with_tools =self.llm.bind_tools(tools)
-        return answer_generation_prompt | llm_with_tools 
     
     def get_generation_chain(self): 
               
