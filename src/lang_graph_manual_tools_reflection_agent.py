@@ -1,19 +1,21 @@
-from langchain_core.messages import  HumanMessage, SystemMessage, AIMessage
-from langgraph.graph import END, StateGraph
-from abc import ABC
-from typing import List,  Annotated, TypedDict
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
-from pydantic import BaseModel, Field
-from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
-import os
-import logging
-import traceback
-from inference.vllm_srv.minstral_langchain import create_vllm_chat_model
-from langchain.output_parsers import PydanticOutputParser
 import json
+import logging
+import os
 import re
+import traceback
+from abc import ABC
+from langchain.output_parsers import PydanticOutputParser
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.tools import tool
-from inference.vllm_srv.cleaner import check_gpu_memory_status ,force_gpu_memory_cleanup
+from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, Field
+from typing import List, Annotated, TypedDict
+
+from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
+from inference.vllm_srv.cleaner import check_gpu_memory_status, force_gpu_memory_cleanup
+from inference.vllm_srv.minstral_langchain import create_vllm_chat_model
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -21,26 +23,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 class ReflectionAgentState(TypedDict):
-            messages: Annotated[List[HumanMessage | AIMessage | SystemMessage], "add_messages"]
-            agent_instance: "ReflectionAgent" 
-            continue_refining: bool = True
-            question: str = ""
-            context:str = ""
+    messages: Annotated[List[HumanMessage | AIMessage | SystemMessage], "add_messages"]
+    agent_instance: "ReflectionAgent"
+    continue_refining: bool = True
+    question: str = ""
+    context: str = ""
+
 
 class QuestionResponseSchema(BaseModel):
-    answer: str = Field( description="expert's RESPONSE or ANSWER the USER'S QUERY" )
-    question: str = Field( description="the original question asked" )
-    source: str = Field( description="the original question asked" ) 
-    context_summary: str = Field( description="less than 500 character summary of context used to ANSWER the USER'S QUERY" )
-    
+    answer: str = Field(description="expert's RESPONSE or ANSWER the USER'S QUERY")
+    question: str = Field(description="the original question asked")
+    source: str = Field(description="the original question asked")
+    context_summary: str = Field(
+        description="less than 500 character summary of context used to ANSWER the USER'S QUERY")
+
     @classmethod
     def has_required_fields(cls, data: dict) -> bool:
         """Check if dict has all required fields for this model."""
         required_fields = set(cls.model_fields.keys())
         dict_fields = set(data.keys())
         return required_fields.issubset(dict_fields)
-    
+
     @classmethod
     def validate_dict_safe(cls, data: dict) -> tuple[bool, str]:
         """Safely validate dict and return success status with error message."""
@@ -49,14 +54,21 @@ class QuestionResponseSchema(BaseModel):
             return True, "Valid"
         except Exception as e:
             return False, str(e)
+
 
 class CritiqueOfAnswerSchema(BaseModel):
-    critique: str = Field( description="the evaluation of the RESPONSE or ANSWER to a USER'S QUERY  based on it's clarity, succinctness, and readability" )
-    clarity: float = Field( description="Single float rating from 0.0 - 1.0 where 0.0 means the RESPONSE is incoherrent and hard to understand where as 1.0 means the explaination is really easy to understand")
-    succinct: float = Field( description="Single float rating from 0.0 - 1.0 where 0.0 means the amonut of text used to answer is very large where as 1.0 means the explaination is as consise as possible without sacrificing ability to understand")
-    readabilty: float = Field( description="Single float rating from 0.0 - 1.0 where 0.0 means the explaination requires a graduate degress to truly comprehend where as 1.0 means reading level is that of a 5th grader  ")
-    revision_needed: bool = Field (description="Single boolean returning True if the answr needs to be improved based on the evaluation, and False if it is sufficently clear, succinct, and readable")
-    response: QuestionResponseSchema = Field( description="the original RESPONSE or ANSWER to USER'S QUERY being critiqued" )
+    critique: str = Field(
+        description="the evaluation of the RESPONSE or ANSWER to a USER'S QUERY  based on it's clarity, succinctness, and readability")
+    clarity: float = Field(
+        description="Single float rating from 0.0 - 1.0 where 0.0 means the RESPONSE is incoherrent and hard to understand where as 1.0 means the explaination is really easy to understand")
+    succinct: float = Field(
+        description="Single float rating from 0.0 - 1.0 where 0.0 means the amonut of text used to answer is very large where as 1.0 means the explaination is as consise as possible without sacrificing ability to understand")
+    readabilty: float = Field(
+        description="Single float rating from 0.0 - 1.0 where 0.0 means the explaination requires a graduate degress to truly comprehend where as 1.0 means reading level is that of a 5th grader  ")
+    revision_needed: bool = Field(
+        description="Single boolean returning True if the answr needs to be improved based on the evaluation, and False if it is sufficently clear, succinct, and readable")
+    response: QuestionResponseSchema = Field(
+        description="the original RESPONSE or ANSWER to USER'S QUERY being critiqued")
 
     @classmethod
     def has_required_fields(cls, data: dict) -> bool:
@@ -64,7 +76,7 @@ class CritiqueOfAnswerSchema(BaseModel):
         required_fields = set(cls.model_fields.keys())
         dict_fields = set(data.keys())
         return required_fields.issubset(dict_fields)
-    
+
     @classmethod
     def validate_dict_safe(cls, data: dict) -> tuple[bool, str]:
         """Safely validate dict and return success status with error message."""
@@ -74,28 +86,30 @@ class CritiqueOfAnswerSchema(BaseModel):
         except Exception as e:
             return False, str(e)
 
+
 class VectorDBContextResponse(BaseModel):
-      context: str = Field( description="Context of the USER'S QUERY" )
-      
+    context: str = Field(description="Context of the USER'S QUERY")
+
 
 class ReflectionAgent(ABC):
 
-    def __init__(self, brain, embedding_model = "BAAI/bge-large-en-v1.5", root_path = "/home/jmitchall/vllm-srv" ,  similarity_threshold:float=0.7, **kwargs):
-        self.llm =brain
-        self.similarity_threshold =similarity_threshold
+    def __init__(self, brain, embedding_model="BAAI/bge-large-en-v1.5", root_path="/home/jmitchall/vllm-srv",
+                 similarity_threshold: float = 0.7, **kwargs):
+        self.llm = brain
+        self.similarity_threshold = similarity_threshold
         # Create Generation Prompt for answer
         self.generation_chain = self.get_generation_chain()
         # Create Reflection Prompt for Answer Evaluation
-        self.reflection_chain= self.get_reflection_chain()
+        self.reflection_chain = self.get_reflection_chain()
         # create Context query Chain
         self.count = 0
         self.embeddings = HuggingFaceOfflineEmbeddings(model_name=embedding_model)
         self.DATABASE_TYPE = kwargs.get("DATABASE_TYPE")
         self.root_path = root_path
-        self.question ="" 
+        self.question = ""
 
     @staticmethod
-    def get_structure_llm_results( json_str :str ):
+    def get_structure_llm_results(json_str: str):
 
         answer_generation_parser = PydanticOutputParser(pydantic_object=QuestionResponseSchema)
         try:
@@ -106,7 +120,7 @@ class ReflectionAgent(ABC):
 
         reflection_critique_parser = PydanticOutputParser(pydantic_object=CritiqueOfAnswerSchema)
         try:
-            return_value= reflection_critique_parser.parse(json_str)
+            return_value = reflection_critique_parser.parse(json_str)
             return return_value
         except Exception as reflection_critique_excpt:
             print(f"reflection_critique_parser : {reflection_critique_excpt}")
@@ -123,16 +137,15 @@ class ReflectionAgent(ABC):
         if is_valid:
             # Create the model instance
             return QuestionResponseSchema.model_validate(return_value)
-        
 
         is_valid, message = CritiqueOfAnswerSchema.validate_dict_safe(return_value)
         if is_valid:
             # Create the model instance
-            return CritiqueOfAnswerSchema.model_validate(return_value)  
-        
-        # If validation fails, return the raw data
+            return CritiqueOfAnswerSchema.model_validate(return_value)
+
+            # If validation fails, return the raw data
         print(f"Validation failed for both schemas. Returning raw data: {return_value}")
-        return return_value  
+        return return_value
 
     @staticmethod
     def extract_json_output(raw_output: str):
@@ -142,36 +155,35 @@ class ReflectionAgent(ABC):
         # Find text between ```json and ```
         json_pattern = r'```json\s*(.*?)\s*```'
         match = re.search(json_pattern, raw_output, re.DOTALL | re.IGNORECASE)
-        
+
         if match:
             json_str = match.group(1).strip()
             try:
                 return_value = ReflectionAgent.get_structure_llm_results(json_str)
-                return return_value       
+                return return_value
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON found in code block: {e}")
 
         # Find text between 1st { and last }
         first_brace = raw_output.find('{')
         last_brace = raw_output.rfind('}')
-        
+
         if first_brace != -1 and last_brace != -1 and first_brace < last_brace:
             json_str = raw_output[first_brace:last_brace + 1]
 
             try:
                 return_value = ReflectionAgent.get_structure_llm_results(json_str)
-                return return_value 
+                return return_value
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON found between braces: {e}")
-        
-        return raw_output
 
+        return raw_output
 
     def manually_call_tools(self, tool_calls):
         return_value = None
         print(f"Tool calls made: {len(tool_calls)}")
         for i, tool_call in enumerate(tool_calls):
-            print(f"  {i+1}. {tool_call['name']} with args: {tool_call['args']}")
+            print(f"  {i + 1}. {tool_call['name']} with args: {tool_call['args']}")
             method_name = tool_call['name']
             if hasattr(self, method_name) and callable(getattr(self, method_name)):
                 method = getattr(self, method_name)
@@ -180,7 +192,7 @@ class ReflectionAgent(ABC):
                 print(f"Method '{method_name}' not found or not callable")
         return return_value
 
-    def refresh_question_context (self, question, sources:List[str], db_type:str):
+    def refresh_question_context(self, question, sources: List[str], db_type: str):
         """ Takes in a {question} and converts the following context {sources}
 A) Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond
 B) Monster Manual - Dungeons & Dragons - Sources - D&D Beyond
@@ -201,26 +213,26 @@ in order to generate a {context} associated to the {question}
         Returns: a String indicating the USER'S QUERY along with the CONTEXT that should be considered 
         """
         collection_names = {
-            "Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond" : "dnd_dm",
-            "Vampire-the-Masquerade":"vtm",
+            "Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond": "dnd_dm",
+            "Vampire-the-Masquerade": "vtm",
             "Monster Manual - Dungeons & Dragons - Sources - D&D Beyond": "dnd_mm",
             "Horror Adventures - Van Richten’s Guide to Ravenloft - Dungeons & Dragons - Sources - D&D Beyond": "dnd_raven",
             "Player’s Handbook - Dungeons & Dragons - Sources - D&D Beyond": "dnd_player",
         }
         context = ""
         if question:
-            self.question = question    
+            self.question = question
             all_retrieved_docs = []
             for src in sources:
-                collection_name= collection_names[src]
-                retriever, temp_ptr = self.get_retriever(collection_name =collection_name , dbtype=db_type)
+                collection_name = collection_names[src]
+                retriever, temp_ptr = self.get_retriever(collection_name=collection_name, dbtype=db_type)
                 if retriever:
                     retrieved_docs = retriever.invoke(question)
                     all_retrieved_docs.extend(retrieved_docs)
                     logger.info(f"Retrieved {len(retrieved_docs)} documents for context")
 
             context = self.format_list_documents_as_string(results=all_retrieved_docs)
-        return_result =f"""USER'S QUERY:
+        return_result = f"""USER'S QUERY:
 ====================
 {question}
 
@@ -230,7 +242,7 @@ CONTEXT START:=======================================
 {context} 
 ===================:CONTEXT END
 """
-        return return_result        
+        return return_result
 
     def get_initial_state(self, question: str = "") -> ReflectionAgentState:
         return ReflectionAgentState(
@@ -239,10 +251,11 @@ CONTEXT START:=======================================
             context="",
             messages=[HumanMessage(content=question)] if question else []
         )
-    
-    def get_retriever_and_vector_stores(self, vdb_type:str, vector_db_persisted_path:str, 
-                                    collection_ref:str, retriever_embeddings) :
-        from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist ,get_quadrant_client, get_qdrant_retriever
+
+    def get_retriever_and_vector_stores(self, vdb_type: str, vector_db_persisted_path: str,
+                                        collection_ref: str, retriever_embeddings):
+        from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist, \
+            get_quadrant_client, get_qdrant_retriever
         from vectordatabases.fais_vector_db_commands import create_faiss_vectorstore, get_faiss_retriever
         from vectordatabases.chroma_vector_db_commands import get_chroma_vectorstore, get_chroma_retriever
         langchain_retriever = None
@@ -255,7 +268,8 @@ CONTEXT START:=======================================
                 # Reconnect to the persisted Qdrant database
                 qdrant_client: QdrantClientSmartPointer = get_quadrant_client(vector_db_persisted_path)
                 if quadrant_does_collection_exist(qdrant_client, collection_ref):
-                    langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref, embeddings=retriever_embeddings, k=5)
+                    langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref,
+                                                               embeddings=retriever_embeddings, k=5)
                     print(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
                 else:
                     print(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
@@ -266,26 +280,26 @@ CONTEXT START:=======================================
                     retriever_embeddings
                 )
                 langchain_retriever = get_faiss_retriever(loaded_vectorstore_wrapper, k=5)
-            case "chroma": 
-                loaded_vectorstore = get_chroma_vectorstore(collection_ref, vector_db_persisted_path, 
+            case "chroma":
+                loaded_vectorstore = get_chroma_vectorstore(collection_ref, vector_db_persisted_path,
                                                             retriever_embeddings)
-                langchain_retriever =  get_chroma_retriever(loaded_vectorstore, k=5)
+                langchain_retriever = get_chroma_retriever(loaded_vectorstore, k=5)
             case _:
                 raise ValueError(
                     f"Unsupported DATABASE_TYPE: {vdb_type}. Supported types are 'qdrant', 'faiss', 'chroma'.")
         return langchain_retriever, qdrant_client
-    
 
-    def get_retriever (self , collection_name:str, dbtype:str  ):
-         if dbtype and collection_name and self.root_path:
-            dbtype=  dbtype.lower()
-            vector_db_persisted_path =f"{self.root_path}/langchain_{collection_name}_{dbtype}"
-            #check if directory exists
+    def get_retriever(self, collection_name: str, dbtype: str):
+        if dbtype and collection_name and self.root_path:
+            dbtype = dbtype.lower()
+            vector_db_persisted_path = f"{self.root_path}/langchain_{collection_name}_{dbtype}"
+            # check if directory exists
             if os.listdir(vector_db_persisted_path):
-                return self. get_retriever_and_vector_stores(dbtype, vector_db_persisted_path , collection_name, self.embeddings)
+                return self.get_retriever_and_vector_stores(dbtype, vector_db_persisted_path, collection_name,
+                                                            self.embeddings)
             else:
                 raise ValueError(f" No Directory {vector_db_persisted_path}")
-            
+
     def format_list_documents_as_string(self, **kwargs) -> str:
         """Format a list of Documents into a human-readable string with metadata.
         
@@ -299,23 +313,22 @@ CONTEXT START:=======================================
         results = kwargs.get('results', [])
         if not results:
             return ''
-        context =""
+        context = ""
         for i, doc in enumerate(results, 1):
-            
+
             similarity = doc.metadata.get("similarity_score", .7)
             if similarity < self.similarity_threshold:
                 continue
-            print(f"Using :{ doc.metadata.get("source")}, page:{doc.metadata.get("page")} based on Threshold {self.similarity_threshold } ")
+            print(
+                f"Using :{doc.metadata.get("source")}, page:{doc.metadata.get("page")} based on Threshold {self.similarity_threshold} ")
             context += doc.page_content + f"\n\n----------end source {i}"
 
         return context
 
+    def get_generation_chain(self):
 
-    
-    def get_generation_chain(self): 
-              
         answer_generation_prompt = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template("""You are an expert Dungeuns and Dragon Game Master. 
+            SystemMessagePromptTemplate.from_template("""You are an expert Dungeuns and Dragon Game Master. 
     You recall all the rules in the following sources:
     {sources}
 
@@ -351,18 +364,18 @@ CONTEXT START:=======================================
 
     {format_instructions}
         """),
-                # This is used to inject the actual content or message that the post will be based on.  
-                # The placeholder will be populated with the user's request at runtime.
-                MessagesPlaceholder(variable_name="messages")  
-            ])
+            # This is used to inject the actual content or message that the post will be based on.
+            # The placeholder will be populated with the user's request at runtime.
+            MessagesPlaceholder(variable_name="messages")
+        ])
         answer_generation_parser = PydanticOutputParser(pydantic_object=QuestionResponseSchema)
-        
+
         # Add format instructions to the prompt
         answer_generation_prompt = answer_generation_prompt.partial(
             format_instructions=answer_generation_parser.get_format_instructions()
         )
-        return answer_generation_prompt | self.llm 
-    
+        return answer_generation_prompt | self.llm
+
     def get_reflection_chain(self):
         generated_reflection_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template("""You are an Dungeons and Dragon Player. You recall all the rules in the following sources:
@@ -414,18 +427,18 @@ CONTEXT START:=======================================
     """),
             # This is used to inject the actual content or message that the post will be based on.  
             # The placeholder will be populated with the user's request at runtime.
-            MessagesPlaceholder(variable_name="messages")  
+            MessagesPlaceholder(variable_name="messages")
         ])
         reflection_critique_parser = PydanticOutputParser(pydantic_object=CritiqueOfAnswerSchema)
-        
+
         # Add format instructions to the prompt
         generated_reflection_prompt = generated_reflection_prompt.partial(
             format_instructions=reflection_critique_parser.get_format_instructions()
         )
-        return generated_reflection_prompt | self.llm 
+        return generated_reflection_prompt | self.llm
 
 
-def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
+def agent_generation_node(state: ReflectionAgentState) -> ReflectionAgentState:
     """
     In LangGraph Agent Flows are represented via Agent WorkFolws where 
     States accumulate and change base on their travels from Node to Node
@@ -440,31 +453,32 @@ def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
         question = state.get("question")
         context = state.get("context")
         ai_messages = state.get("messages")
-        
+
         logger.info(f"Generation node processing question: {question[:50]}...")
-        
+
         # Create Generation Prompt with context and question
         logger.info("Invoking generation chain...")
-        last_message =  [ ai_messages[-1] ]
-        
+        last_message = [ai_messages[-1]]
+
         contextual_response = agent_components.context_chain.invoke({
-                "question": question,
-                "db_type": "qdrant",
-                "messages": last_message,
+            "question": question,
+            "db_type": "qdrant",
+            "messages": last_message,
         })
-        context = agent_components.manually_call_tools(contextual_response.tool_calls) if contextual_response.tool_calls and agent_components else ""
-            
+        context = agent_components.manually_call_tools(
+            contextual_response.tool_calls) if contextual_response.tool_calls and agent_components else ""
+
         generated_response_output = agent_components.generation_chain.invoke({
-                "question": question,
-                "context": context,
-                "messages": last_message,
-                "sources":"""
+            "question": question,
+            "context": context,
+            "messages": last_message,
+            "sources": """
 1) Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond
 2) Monster Manual - Dungeons & Dragons - Sources - D&D Beyond
 3) Player’s Handbook - Dungeons & Dragons - Sources - D&D Beyond
 4) Horror Adventures - Van Richten’s Guide to Ravenloft - Dungeons & Dragons - Sources - D&D Beyond
 """
-            }
+        }
         )
         logger.info("Generation successful")
         generated_response_obj = agent_components.extract_json_output(generated_response_output.content)
@@ -478,16 +492,16 @@ def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
     }}"""
         else:
             generated_response_and_answer = str(generated_response_obj)
-                
-        
-        
+
+
+
     except Exception as e:
         logger.error(f"❌ Generation node failed: {str(e)}")
         logger.error(f"Full traceback:\n{traceback.format_exc()}")
         # Return error message in state
         error_msg = f"Generation failed: {str(e)}"
         return {**state, "messages": [AIMessage(content=error_msg)]}
-    
+
     if generated_response_and_answer and generated_response_and_answer.strip():
         answer_provided = True
     else:
@@ -496,10 +510,10 @@ def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
         ai_messages = [AIMessage(content=generated_response_and_answer)]
     else:
         ai_messages.append(AIMessage(content=generated_response_and_answer))
-    return {**state, "continue_refining": answer_provided, "messages": ai_messages }
-        
+    return {**state, "continue_refining": answer_provided, "messages": ai_messages}
 
-def agent_reflection_node( state: ReflectionAgentState) -> ReflectionAgentState:
+
+def agent_reflection_node(state: ReflectionAgentState) -> ReflectionAgentState:
     """
     In LangGraph Agent Flows are represented via Agent WorkFolws where 
     States accumulate and change base on their travels from Node to Node
@@ -514,22 +528,22 @@ def agent_reflection_node( state: ReflectionAgentState) -> ReflectionAgentState:
         ai_messages = state.get("messages")
         question = state.get("question")
         logger.info("Invoking reflection chain...")
-        last_response =  [ ai_messages[-1] ]
+        last_response = [ai_messages[-1]]
         response = ai_messages[-1].content
-        
+
         # Create Reflection on current messages
         response_reflection_output = agent_components.reflection_chain.invoke(
             {
                 "question": question,
                 "messages": last_response,
-                "sources":"""    
+                "sources": """    
 1) Player’s Handbook - Dungeons & Dragons - Sources - D&D Beyond
 2) Horror Adventures - Van Richten’s Guide to Ravenloft - Dungeons & Dragons - Sources - D&D Beyond
 """
             }
         )
         logger.info("Reflection successful")
-        response_reflection_obj= agent_components.extract_json_output(response_reflection_output.content)
+        response_reflection_obj = agent_components.extract_json_output(response_reflection_output.content)
         # Extract critique from the parsed Pydantic object
         critique_provided = True
         if isinstance(response_reflection_obj, CritiqueOfAnswerSchema):
@@ -538,7 +552,7 @@ def agent_reflection_node( state: ReflectionAgentState) -> ReflectionAgentState:
             Critique: {response_reflection_obj.critique} 
             """
             critique_provided = response_reflection_obj.revision_needed
-            if response_reflection_obj.clarity <=.5  or response_reflection_obj.succinct <=.5  or response_reflection_obj.readabilty <=.5 and not critique_provided:
+            if response_reflection_obj.clarity <= .5 or response_reflection_obj.succinct <= .5 or response_reflection_obj.readabilty <= .5 and not critique_provided:
                 print(f""" 
 INCORRECT EVALUATION:
                     clarity: {response_reflection_obj.clarity}
@@ -547,105 +561,106 @@ INCORRECT EVALUATION:
 BUT RETRY is {critique_provided}
                       """)
         else:
-            response_reflection = str(response_reflection_obj) 
+            response_reflection = str(response_reflection_obj)
             if not (response_reflection and response_reflection.strip()):
-                critique_provided = False     
-        
+                critique_provided = False
+
     except Exception as e:
         logger.error(f"❌ Reflection node failed: {str(e)}")
         logger.error(f"Full traceback:\n{traceback.format_exc()}")
         # Return with no refinement needed on error
         return {**state, "continue_refining": False}
     ai_messages.append(HumanMessage(content=response_reflection))
-    return {**state, "continue_refining": critique_provided , "messages": ai_messages , "context": response_reflection} # pretend human feedback
+    return {**state, "continue_refining": critique_provided, "messages": ai_messages,
+            "context": response_reflection}  # pretend human feedback
 
 
-def should_agent_reflect(state: ReflectionAgentState):  
+def should_agent_reflect(state: ReflectionAgentState):
     agent_components = state["agent_instance"]
-    if agent_components.count <5 and state.get("continue_refining", True):
-        agent_components.count +=1
+    if agent_components.count < 5 and state.get("continue_refining", True):
+        agent_components.count += 1
     else:
         state["continue_refining"] = False
         return END
     return "agent_reflection_node"
 
+
 def should_agent_retry(state: ReflectionAgentState):
-    if  state.get("continue_refining", True):
+    if state.get("continue_refining", True):
         return "agent_generation_node"
     return END
+
 
 if __name__ == "__main__":
     llm = None
     force_gpu_memory_cleanup()
     try:
         logger.info("🚀 Starting Reflection Agent...")
-        
+
         # Create Agent Brain
         logger.info("Initializing vLLM engine...")
         # get_langchain_vllm_mistral_quantized(download_dir="./models")
-        llm = create_vllm_chat_model( download_dir="./models")  # Change this to your model directory
+        llm = create_vllm_chat_model(download_dir="./models")  # Change this to your model directory
         logger.info("✅ vLLM engine initialized successfully")
-        
+
         reflection_agent = ReflectionAgent(
-            brain=llm,  #"TheBloke/Mistral-7B-Instruct-v0.2-GPTQ"
-            embedding_model = "BAAI/bge-large-en-v1.5", # good for RAG Searching 
-            root_path = "/home/jmitchall/vllm-srv" ,
-            #collection_name= "dnd_raven",
-            #DATABASE_TYPE = "qdrant"
+            brain=llm,  # "TheBloke/Mistral-7B-Instruct-v0.2-GPTQ"
+            embedding_model="BAAI/bge-large-en-v1.5",  # good for RAG Searching
+            root_path="/home/jmitchall/vllm-srv",
+            # collection_name= "dnd_raven",
+            # DATABASE_TYPE = "qdrant"
         )
-        
+
         logger.info("✅ Reflection agent created")
 
         # Initialize a StateGraph
         graph = StateGraph(ReflectionAgentState)
-        
-        graph.add_node("agent_generation_node",agent_generation_node)
-        graph.add_node("agent_reflection_node",agent_reflection_node)
-        graph.add_conditional_edges( "agent_reflection_node", should_agent_retry )   
-        graph.add_conditional_edges("agent_generation_node",should_agent_reflect)
+
+        graph.add_node("agent_generation_node", agent_generation_node)
+        graph.add_node("agent_reflection_node", agent_reflection_node)
+        graph.add_conditional_edges("agent_reflection_node", should_agent_retry)
+        graph.add_conditional_edges("agent_generation_node", should_agent_reflect)
         graph.set_entry_point("agent_generation_node")
         workflow_graph = graph.compile()
         logger.info("✅ Workflow graph compiled")
-        
+
         query = "Who is Strahd von Zarovich in Dungeons and Dragons lore?"
         logger.info(f"Processing query: {query}")
 
         # Invoke workflow with initial state
-        result = workflow_graph.invoke(reflection_agent.get_initial_state (question=query))
+        result = workflow_graph.invoke(reflection_agent.get_initial_state(question=query))
         logger.info("✅ Workflow completed successfully")
         logger.info(f"\n\n{"=" * 80}\nTRACE result: {result}")
         logger.info(f"\n\nFinal result: {result["messages"][-1].content}")
-        
+
     except Exception as e:
         logger.error(f"❌ FATAL ERROR: {str(e)}")
         logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        
+
         # Try to get GPU info if available
         try:
             import subprocess
-            gpu_info = subprocess.check_output(['nvidia-smi', '--query-gpu=name,memory.total,memory.used,memory.free', '--format=csv'], 
-                                              stderr=subprocess.STDOUT).decode()
+
+            gpu_info = subprocess.check_output(
+                ['nvidia-smi', '--query-gpu=name,memory.total,memory.used,memory.free', '--format=csv'],
+                stderr=subprocess.STDOUT).decode()
             logger.error(f"GPU Status:\n{gpu_info}")
         except:
             logger.error("Could not retrieve GPU status")
-        
+
         raise
-    
+
     finally:
         # Suppress vLLM's benign exit message
         if llm is not None:
-            
             print(check_gpu_memory_status())
             logger.info("✅ Workflow complete, exiting...")
             import sys
             import os
+
             llm.cleanup_llm_memory()
             # Suppress the benign "Engine core died" message by redirecting stderr
             # This message appears during normal shutdown and is not an error
             sys.stderr = open(os.devnull, 'w')
             # Engine will cleanup automatically when Python exits
             force_gpu_memory_cleanup()
-
-    
-
-

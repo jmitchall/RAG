@@ -1,8 +1,9 @@
 import numpy as np
 import torch
+from embeddings.embedding_model_interace import EmbeddingModelInterface
 from transformers import AutoTokenizer, AutoModel
 from typing import List, Dict, Tuple
-from embeddings.embedding_model_interace import EmbeddingModelInterface
+
 
 class HuggingFaceLocalModel(EmbeddingModelInterface):
 
@@ -27,17 +28,16 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         }
         self.torch_dtype = self.dtype_map.get(torch_dtype, torch.float16)
         if max_tokens <= 0:
-            self._max_tokens, self._safe_embedding_dim = HuggingFaceLocalModel.estimate_optimal_max_token_actual_embeddings( 
-            model_name,
-            batch_processing=False,  # Changed to False since we're forcing individual processing
-            safety_level=safety_level  # Using safe mode
+            self._max_tokens, self._safe_embedding_dim = HuggingFaceLocalModel.estimate_optimal_max_token_actual_embeddings(
+                model_name,
+                batch_processing=False,  # Changed to False since we're forcing individual processing
+                safety_level=safety_level  # Using safe mode
             )
 
             print(f"Initializing embedding manager with {model_name}, preferably with previous Vector DB Embeddings...")
             print(f"📏 Using max_tokens: {self._max_tokens}, safe_embedding_dim: {self._safe_embedding_dim}")
 
         self.load_local_model()
-
 
     def calculate_avg_words_per_token(self, documents: List[str]) -> float:
         """
@@ -48,20 +48,20 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         """
         if not documents:
             return 0.75  # Default fallback
-        
+
         ratios = []
         for doc in documents[:10]:  # Sample first 10 docs for speed
             if len(doc) > 0:
                 word_count = len(doc.split())
                 token_count = len(self.tokenizer.encode(doc))
                 ratios.append(word_count / token_count)
-        
+
         return sum(ratios) / len(ratios) if ratios else 0.75
 
     @property
     def safe_embedding_dim(self) -> int:
         return self._safe_embedding_dim
-   
+
     @staticmethod
     def create_instance(**kwargs):
         """
@@ -76,7 +76,6 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         self.use_server = False
         """Load model locally using transformers library instead of vLLM server."""
         print(f"💻 Loading model locally: {self.model_name}")
-
 
         # Load a tokenizer - this converts text into numbers that the AI model can understand
         # Think of it like a dictionary that maps words to numbers
@@ -396,9 +395,9 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         except Exception as e:
             print(f"⚠️  Could not verify embedding dimension: {e} for model {self.model_name}")
             return 768
-    
+
     @staticmethod
-    def detect_embedding_dimension( model_name: str, max_tokens: int = 250) -> int:
+    def detect_embedding_dimension(model_name: str, max_tokens: int = 250) -> int:
         """
         Detect the actual embedding dimension from the model by making a test call.
         This is the most reliable way to get the correct dimension.

@@ -3,11 +3,10 @@ import os
 import pickle
 import torch
 import uuid
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from typing import List, Optional
-
 from vectordatabases.vector_db_interface import VectorDBInterface
 
 try:
@@ -22,13 +21,12 @@ except ImportError:
 class QdrantVectorDB(VectorDBInterface):
     """Qdrant implementation of vector database with GPU optimizations"""
 
-                 
     def __init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None,
                  collection_name: str = None, host: str = None, port: int = None,
                  use_gpu: bool = True, prefer_server: bool = False, **kwargs):
         if not QDRANT_AVAILABLE:
             raise ImportError("Qdrant not available. Install with: uv add qdrant-client")
-        
+
         super().__init__(embedding_dim, persist_path, **kwargs)
         self.use_gpu = use_gpu
         self.host = host
@@ -59,16 +57,16 @@ class QdrantVectorDB(VectorDBInterface):
             self.prepare(host, port, prefer_server)
         else:
             raise ValueError("Must provide either persist_path (to load) or embedding_dim (to create new)")
-        
-         # print list of lloaded Collections
+
+        # print list of lloaded Collections
         collections = self.get_list_of_collections()
-        print(f"📂 Available Qdrant collections: {collections}" )
+        print(f"📂 Available Qdrant collections: {collections}")
 
     def get_list_of_collections(self) -> List[str]:
         """Get list of collections in Qdrant"""
         if not self.client:
             raise RuntimeError("Qdrant client not initialized")
-        
+
         try:
             collections = self.client.get_collections()
             collection_names = [col.name for col in collections.collections]
@@ -95,7 +93,7 @@ class QdrantVectorDB(VectorDBInterface):
         loaded = False
         if self.persist_path:
             loaded = self.load()
-        
+
         # Only setup collection if we didn't load successfully
         if not loaded:
             self._setup_collection()
@@ -107,7 +105,7 @@ class QdrantVectorDB(VectorDBInterface):
         self.server_mode = False
         self.client = None
         self.host = host
-        self.port =port
+        self.port = port
         self.prefer_server = prefer_server
         # Only try server connection if explicitly requested
         if prefer_server and host and port:
@@ -247,12 +245,11 @@ class QdrantVectorDB(VectorDBInterface):
                 except Exception as basic_e:
                     print(f"❌ Failed to create collection with basic config: {basic_e}")
                     raise RuntimeError(f"Could not create Qdrant collection: {basic_e}")
-                
+
     def get_max_document_length(self) -> int:
         if self.documents:
             return max(len(doc.page_content) for doc in self.documents)
         return 0
-    
 
     def add_documents(self, docs: List[Document], embeddings: List[np.ndarray]) -> None:
         if len(docs) != len(embeddings):
@@ -400,16 +397,16 @@ class QdrantVectorDB(VectorDBInterface):
             mode = "server" if self.server_mode else "in-memory"
             print(f"ℹ️  No persist_path set, Qdrant data persisted in {mode} collection")
             return
-    
+
         # Save document metadata for consistency
         os.makedirs(os.path.dirname(self.persist_path) if os.path.dirname(self.persist_path) else '.', exist_ok=True)
         docs_file = f"{self.persist_path}.qdrant.docs.pkl"
-    
+
         with open(docs_file, 'wb') as f:
             pickle.dump(self.documents, f)
-    
+
         print(f"💾 Qdrant metadata saved to {docs_file}")
-    
+
         # Save GPU configuration info
         config_file = f"{self.persist_path}.qdrant.config.pkl"
         config_info = {
@@ -421,10 +418,10 @@ class QdrantVectorDB(VectorDBInterface):
             'use_gpu': self.use_gpu,
             'gpu_available': self.gpu_available
         }
-    
+
         with open(config_file, 'wb') as f:
             pickle.dump(config_info, f)
-    
+
         # Save collection snapshot (vectors and payloads) for in-memory mode
         if not self.server_mode:
             try:
@@ -432,13 +429,13 @@ class QdrantVectorDB(VectorDBInterface):
                 # Get all points from collection
                 collection_info = self.client.get_collection(self.collection_name)
                 total_points = collection_info.points_count
-                
+
                 if total_points > 0:
                     # Scroll through all points
                     all_points = []
                     offset = None
                     batch_size = 1000
-                    
+
                     while True:
                         result = self.client.scroll(
                             collection_name=self.collection_name,
@@ -447,19 +444,19 @@ class QdrantVectorDB(VectorDBInterface):
                             with_payload=True,
                             with_vectors=True
                         )
-                        
+
                         points, next_offset = result
-                        
+
                         if not points:
                             break
-                        
+
                         all_points.extend(points)
-                        
+
                         if next_offset is None:
                             break
-                        
+
                         offset = next_offset
-                    
+
                     # Save all points data
                     points_file = f"{self.persist_path}.qdrant.points.pkl"
                     points_data = [
@@ -470,35 +467,35 @@ class QdrantVectorDB(VectorDBInterface):
                         }
                         for point in all_points
                     ]
-                    
+
                     with open(points_file, 'wb') as f:
                         pickle.dump(points_data, f)
-                    
+
                     print(f"💾 Saved {len(points_data)} collection points to {points_file}")
             except Exception as e:
                 print(f"⚠️  Could not save collection points: {e}")
         else:
             print(f"ℹ️  Server mode: collection data persisted on Qdrant server")
-    
+
     def load(self) -> bool:
         """Load documents and configuration from persisted files"""
         if not self.persist_path:
             return False
-    
+
         docs_file = f"{self.persist_path}.qdrant.docs.pkl"
         config_file = f"{self.persist_path}.qdrant.config.pkl"
         points_file = f"{self.persist_path}.qdrant.points.pkl"
-    
+
         # Check if files exist
         if not os.path.exists(docs_file) or not os.path.exists(config_file):
             print(f"ℹ️  No existing Qdrant data found at {self.persist_path}")
             return False
-    
+
         try:
             # Load configuration
             with open(config_file, 'rb') as f:
                 config_info = pickle.load(f)
-    
+
             # Restore configuration
             self.host = config_info.get('host', self.host)
             self.port = config_info.get('port', self.port)
@@ -506,21 +503,21 @@ class QdrantVectorDB(VectorDBInterface):
             self.collection_name = config_info.get('collection_name', self.collection_name)
             self.prefer_server = config_info.get('prefer_server', self.prefer_server)
             self.use_gpu = config_info.get('use_gpu', self.use_gpu)
-            
+
             # Check GPU availability (may have changed since save)
             self.gpu_available = torch.cuda.is_available() and self.use_gpu
-            
+
             # Initialize client if not already done
             if self.client is None:
                 print(f"🔄 Initializing Qdrant client from saved configuration...")
                 self.init_client(self.host, self.port, self.prefer_server)
-            
+
             # Load documents
             with open(docs_file, 'rb') as f:
                 self.documents = pickle.load(f)
-    
+
             print(f"💾 Loaded {len(self.documents)} documents from {docs_file}")
-            
+
             # Try to connect to existing collection
             collection_exists = False
             try:
@@ -528,62 +525,63 @@ class QdrantVectorDB(VectorDBInterface):
                 print(f"📂 Connected to existing collection: {self.collection_name}")
                 print(f"📊 Points in collection: {collection_info.points_count}")
                 collection_exists = True
-                
+
                 # Verify point count matches
                 if collection_info.points_count != len(self.documents):
-                    print(f"⚠️  Warning: Collection has {collection_info.points_count} points but loaded {len(self.documents)} documents")
-                    
+                    print(
+                        f"⚠️  Warning: Collection has {collection_info.points_count} points but loaded {len(self.documents)} documents")
+
             except Exception as e:
                 print(f"ℹ️  Collection '{self.collection_name}' not found: {e}")
-            
+
             # If collection doesn't exist and we have saved points, restore them
             if not collection_exists and os.path.exists(points_file):
                 print(f"🔄 Restoring collection from saved points...")
-                
+
                 # Create collection
                 self._setup_collection()
-                
+
                 # Load and restore points
                 try:
                     with open(points_file, 'rb') as f:
                         points_data = pickle.load(f)
-                    
+
                     print(f"� Restoring {len(points_data)} points to collection...")
-                    
+
                     # Batch upsert for better performance
                     batch_size = 1000 if self.gpu_available else 500
                     for batch_start in range(0, len(points_data), batch_size):
                         batch_end = min(batch_start + batch_size, len(points_data))
                         batch_points = []
-                        
+
                         for point_data in points_data[batch_start:batch_end]:
                             batch_points.append(PointStruct(
                                 id=point_data['id'],
                                 vector=point_data['vector'],
                                 payload=point_data['payload']
                             ))
-                        
+
                         self.client.upsert(
                             collection_name=self.collection_name,
                             points=batch_points
                         )
                         print(f"   ✅ Restored batch {batch_start + 1}-{batch_end} of {len(points_data)}")
-                    
+
                     print(f"✅ Successfully restored {len(points_data)} points to collection")
-                    
+
                 except Exception as e:
                     print(f"❌ Failed to restore points: {e}")
                     return False
-            
+
             elif not collection_exists:
                 print(f"⚠️  No collection or saved points found. Collection needs to be recreated with add_documents()")
                 # Create empty collection
                 self._setup_collection()
-    
+
             mode = "server" if self.server_mode else "in-memory"
             print(f"✅ Qdrant data loaded from {self.persist_path} ({mode} mode)")
             return True
-    
+
         except Exception as e:
             print(f"❌ Failed to load Qdrant data: {e}")
             import traceback
@@ -610,7 +608,7 @@ class QdrantVectorDB(VectorDBInterface):
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
-    
+
     def delete_collection(self, **kwargs) -> bool:
         """ 
         Delete Table or collection supported by the 
@@ -644,9 +642,10 @@ class QdrantVectorDB(VectorDBInterface):
 
     def as_langchain_retriever(self, embedding_function, top_k: int = 5):
         """Convert to LangChain retriever interface"""
-        return QdrantLangChainRetriever( vector_db=self,
-            embedding_function=embedding_function,
-            top_k=top_k)
+        return QdrantLangChainRetriever(vector_db=self,
+                                        embedding_function=embedding_function,
+                                        top_k=top_k)
+
 
 class QdrantLangChainRetriever(BaseRetriever):
     """LangChain Retriever wrapper for QdrantVectorDB"""
@@ -655,12 +654,11 @@ class QdrantLangChainRetriever(BaseRetriever):
     embedding_function: callable
     top_k: int = 5
 
-
     def get_relevant_documents(
-        self,
-        query: str,
-        *,
-        run_manager: Optional[CallbackManagerForRetrieverRun] = None,
+            self,
+            query: str,
+            *,
+            run_manager: Optional[CallbackManagerForRetrieverRun] = None,
     ) -> List[Document]:
         # Generate embedding for the query
         query_embedding = self.embedding_function(query)
@@ -672,7 +670,7 @@ class QdrantLangChainRetriever(BaseRetriever):
         )
 
         return results
-    
+
     def format_list_documents_as_string(self, **kwargs) -> str:
         """Format a list of Documents into a human-readable string with metadata.
         
@@ -686,10 +684,7 @@ class QdrantLangChainRetriever(BaseRetriever):
         results = kwargs.get('results', [])
         if not results:
             return ''
-        context =""
+        context = ""
         for i, doc in enumerate(results, 1):
             context += doc.page_content + "\n\n"
         return context
-
-
-

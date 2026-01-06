@@ -3,11 +3,10 @@ import numpy as np
 import os
 import pickle
 import torch
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from typing import List, Optional
-
 from vectordatabases.vector_db_interface import VectorDBInterface
 
 
@@ -23,7 +22,7 @@ class FaissVectorDB(VectorDBInterface):
     - self.softmax_temperature: Temperature parameter for confidence score softmax normalization
     """
 
-    def __init__(self, embedding_dim: int =0, persist_path: Optional[str] = None, use_gpu: bool = True,
+    def __init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None, use_gpu: bool = True,
                  gpu_memory_fraction: float = 0.8, **kwargs):
         super().__init__(embedding_dim, persist_path, **kwargs)
 
@@ -107,13 +106,11 @@ class FaissVectorDB(VectorDBInterface):
         else:
             print(f"💻 Created new FAISS vector database with CPU")
 
-
     def get_max_document_length(self) -> int:
         if self.documents:
             return max(len(doc.page_content) for doc in self.documents)
         return 0
-     
-     
+
     def add_documents(self, docs: List[Document], embeddings: List[np.ndarray]) -> None:
         if len(docs) != len(embeddings):
             raise ValueError("Number of documents must match number of embeddings")
@@ -167,7 +164,6 @@ class FaissVectorDB(VectorDBInterface):
         exp_scores = np.exp(negative_distances - np.max(negative_distances))
         probabilities = exp_scores / np.sum(exp_scores)
         return probabilities
-    
 
     def search(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Document]:
         if len(self.documents) == 0:
@@ -199,7 +195,6 @@ class FaissVectorDB(VectorDBInterface):
 
             # Convert distances to confidence percentages
             confidence_percentages = self._confidence_softmax(distances[0])
-           
 
             results = []
             for i, (distance, idx, confidence) in enumerate(zip(distances[0], indices[0], confidence_percentages)):
@@ -217,11 +212,11 @@ class FaissVectorDB(VectorDBInterface):
                         }
                     )
                     results.append(doc_with_score)
-            
+
             if results:
                 hardware_type = "GPU-accelerated" if self.gpu_available else "CPU"
                 print(f"🔍 Found {len(results)} similar documents ({hardware_type} search)")
-            
+
             # L2 (Euclidean) distances between the query embedding and the matched document embedding
             # Shape: (1, top_k) - the first dimension is for the query batch (always 1 in this code), second is the number of results
             # Lower distances = more similar documents (since it's measuring distance, not similarity)
@@ -360,7 +355,7 @@ class FaissVectorDB(VectorDBInterface):
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
-    
+
     def delete_collection(self, **kwargs) -> bool:
         """ 
         Delete Table or collection supported by the 
@@ -431,10 +426,10 @@ class FaissLangChainRetriever(BaseRetriever):
         arbitrary_types_allowed = True
 
     def _get_relevant_documents(
-        self,
-        query: str,
-        *,
-        run_manager: Optional[CallbackManagerForRetrieverRun] = None
+            self,
+            query: str,
+            *,
+            run_manager: Optional[CallbackManagerForRetrieverRun] = None
     ) -> List[Document]:
         """Retrieve documents relevant to the query
            1. When LangChain sees retriever in the context
@@ -452,7 +447,8 @@ class FaissLangChainRetriever(BaseRetriever):
         print(f"Max document length in vector DB: {chunk_size} characters")
         query_text_input = query
         if len(query_text_input) > chunk_size:
-            print(f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
+            print(
+                f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
             query_text_input = query_text_input[:chunk_size]
 
         # Generate embedding for the query
@@ -464,10 +460,10 @@ class FaissLangChainRetriever(BaseRetriever):
 
         # Search the vector database
         results = self.vector_db.search(query_embedding, top_k=self.top_k)
-        
+
         print(f"\n🔍 Retrieved {len(results)} documents for query '{query_text_input}'")
         return results
-    
+
     def format_list_documents_as_string(self, **kwargs) -> str:
         """Format a list of Documents into a human-readable string with metadata.
         
@@ -481,7 +477,7 @@ class FaissLangChainRetriever(BaseRetriever):
         results = kwargs.get('results', [])
         if not results:
             return ''
-        context =""
+        context = ""
         for i, doc in enumerate(results, 1):
             print(f"\n--- Result {i} ---")
             print(f"Content: {doc.page_content}")
@@ -491,4 +487,3 @@ class FaissLangChainRetriever(BaseRetriever):
             print(f"Search Rank: {doc.metadata.get('search_rank', 'N/A')}")
             context += doc.page_content + "\n\n"
         return context
-

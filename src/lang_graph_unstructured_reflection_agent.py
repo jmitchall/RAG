@@ -304,6 +304,8 @@ def should_agent_retry(state: ReflectionAgentState):
     return END
 
 if __name__ == "__main__":
+    from inference.vllm_srv.cleaner import cleanup_vllm_engine , force_gpu_memory_cleanup   
+    force_gpu_memory_cleanup()
     llm = None
     try:
         logger.info("🚀 Starting Reflection Agent...")
@@ -361,7 +363,7 @@ if __name__ == "__main__":
             logger.info("✅ Workflow complete, exiting...")
             import sys
             import os
-            
+            cleanup_vllm_engine(llm)
             # Suppress the benign "Engine core died" message by redirecting stderr
             # This message appears during normal shutdown and is not an error
             sys.stderr = open(os.devnull, 'w')

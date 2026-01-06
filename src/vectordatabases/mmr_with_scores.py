@@ -5,12 +5,12 @@ MMR (Maximal Marginal Relevance) balances relevance with diversity but doesn't
 return similarity scores by default. This module provides utilities to combine both.
 """
 
-from typing import List, Tuple
 from langchain.schema import Document
+from typing import List, Tuple
 
 
-def compare_similarity_vs_mmr(vectorstore, query: str, k: int = 5, 
-                                fetch_k: int = 20, lambda_mult: float = 0.5) -> Tuple[List[Document], List[Document]]:
+def compare_similarity_vs_mmr(vectorstore, query: str, k: int = 5,
+                              fetch_k: int = 20, lambda_mult: float = 0.5) -> Tuple[List[Document], List[Document]]:
     """
     Compare pure similarity search results vs MMR results side-by-side.
     
@@ -45,7 +45,7 @@ def compare_similarity_vs_mmr(vectorstore, query: str, k: int = 5,
         doc.metadata['similarity_score'] = -distance  # For distance metrics
         doc.metadata['rank'] = len(sim_docs) + 1
         sim_docs.append(doc)
-    
+
     # Get MMR results (diverse)
     mmr_docs = vectorstore.max_marginal_relevance_search(
         query,
@@ -53,11 +53,11 @@ def compare_similarity_vs_mmr(vectorstore, query: str, k: int = 5,
         fetch_k=fetch_k,
         lambda_mult=lambda_mult
     )
-    
+
     # Add rank to MMR results
     for i, doc in enumerate(mmr_docs):
         doc.metadata['mmr_rank'] = i + 1
-    
+
     return sim_docs, mmr_docs
 
 
@@ -69,39 +69,39 @@ def print_comparison(sim_docs: List[Document], mmr_docs: List[Document]):
         sim_docs: Results from similarity search
         mmr_docs: Results from MMR search
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("SIMILARITY SEARCH (Pure Relevance)")
-    print("="*80)
+    print("=" * 80)
     for i, doc in enumerate(sim_docs, 1):
         score = doc.metadata.get('similarity_score', 'N/A')
         distance = doc.metadata.get('distance', 'N/A')
         source = doc.metadata.get('source', 'unknown')
         page = doc.metadata.get('page', 'N/A')
-        
+
         print(f"\n{i}. Distance: {distance:.4f} | Score: {score:.4f}")
         print(f"   Source: {source} (page {page})")
         print(f"   Content: {doc.page_content[:150]}...")
-    
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("MMR SEARCH (Relevance + Diversity)")
-    print("="*80)
+    print("=" * 80)
     for i, doc in enumerate(mmr_docs, 1):
         source = doc.metadata.get('source', 'unknown')
         page = doc.metadata.get('page', 'N/A')
-        
+
         print(f"\n{i}. Rank #{i}")
         print(f"   Source: {source} (page {page})")
         print(f"   Content: {doc.page_content[:150]}...")
-    
+
     # Show overlap analysis
     sim_contents = {doc.page_content for doc in sim_docs}
     mmr_contents = {doc.page_content for doc in mmr_docs}
     overlap = sim_contents & mmr_contents
-    
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print(f"ANALYSIS: {len(overlap)}/{len(sim_docs)} documents are the same")
     print(f"MMR introduced {len(mmr_docs) - len(overlap)} different documents for diversity")
-    print("="*80)
+    print("=" * 80)
 
 
 def get_mmr_with_scores(vectorstore, query: str, k: int = 5,
@@ -130,7 +130,7 @@ def get_mmr_with_scores(vectorstore, query: str, k: int = 5,
         - Lower-ranked docs may have higher scores (due to diversity factor)
     """
     import numpy as np
-    
+
     # Get MMR results
     mmr_docs = vectorstore.max_marginal_relevance_search(
         query,
@@ -138,7 +138,7 @@ def get_mmr_with_scores(vectorstore, query: str, k: int = 5,
         fetch_k=fetch_k,
         lambda_mult=lambda_mult
     )
-    
+
     # Get query embedding
     if hasattr(vectorstore, '_embedding_function'):
         query_embedding = vectorstore._embedding_function.embed_query(query)
@@ -147,7 +147,7 @@ def get_mmr_with_scores(vectorstore, query: str, k: int = 5,
     else:
         # Fallback: return docs without scores
         return [(doc, None) for doc in mmr_docs]
-    
+
     results = []
     for doc in mmr_docs:
         # Compute similarity for this document
@@ -156,21 +156,21 @@ def get_mmr_with_scores(vectorstore, query: str, k: int = 5,
             # Get document embedding and compute similarity
             # This is vectorstore-specific and may need adjustment
             doc_text = doc.page_content
-            
+
             if hasattr(vectorstore, '_embedding_function'):
                 doc_embedding = vectorstore._embedding_function.embed_query(doc_text)
             else:
                 doc_embedding = vectorstore.embeddings.embed_query(doc_text)
-            
+
             # Compute cosine similarity
             query_norm = np.linalg.norm(query_embedding)
             doc_norm = np.linalg.norm(doc_embedding)
             similarity = np.dot(query_embedding, doc_embedding) / (query_norm * doc_norm + 1e-10)
-            
+
             results.append((doc, float(similarity)))
         except Exception:
             results.append((doc, None))
-    
+
     return results
 
 

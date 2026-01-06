@@ -1,7 +1,8 @@
 import torch
+from langchain_core.embeddings import Embeddings
 from transformers import AutoTokenizer, AutoModel
 from typing import List
-from langchain_core.embeddings import Embeddings
+
 
 # This class creates an "embeddings" system using HuggingFace models
 # WHAT ARE EMBEDDINGS? Think of them as translating words into a secret code of numbers
@@ -9,8 +10,8 @@ from langchain_core.embeddings import Embeddings
 # For example: "happy" and "joyful" would get very similar number patterns
 # But "happy" and "sad" would get very different number patterns
 class HuggingFaceOfflineEmbeddings(Embeddings):
-    def __init__(self, model_name: str ,
-                 torch_dtype: str = "float16",):
+    def __init__(self, model_name: str,
+                 torch_dtype: str = "float16", ):
         """
         Set up the embedding system using a HuggingFace model.
         
@@ -30,7 +31,7 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
                         - "bfloat16" = special format that's good for AI, uses half memory
                         Think of it like photo quality: higher quality = bigger file size
         """
-        
+
         # STEP 1: Set up the number precision system
         # Create a dictionary (like a phonebook) that converts text names to actual torch settings
         self.dtype_map = {
@@ -46,7 +47,7 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
         # Example: "I love cats" might become ["I", "love", "cats"] or ["I", "lov", "e", "cat", "s"]
         # Different models break text differently, so we need the right tokenizer for our model
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        
+
         # STEP 3: Load the actual AI model (the brain that does the work)
         # This downloads the model from HuggingFace if you don't have it yet
         # Once downloaded, it saves it on your computer for next time (like installing an app)
@@ -55,21 +56,21 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
             torch_dtype=self.torch_dtype  # Use the precision setting we chose above
             # , cache_dir="./model_cache"  # Optional: where to save downloaded models on your computer
         )
-        
+
         # STEP 4: Put model in evaluation mode
         # WHAT DOES THIS MEAN? Models have two modes:
         # - Training mode: the model is learning and updating itself (like a student studying)
         # - Evaluation mode: the model is just making predictions (like taking a test)
         # We use eval() because we're not teaching it, just using it
         self.model.eval()
-        
+
         # STEP 5: Check if we have a GPU and set up device
         # GPU (Graphics Processing Unit) = super fast calculator built into graphics cards
         # Originally made for video games, but perfect for AI because both need lots of math
         if torch.cuda.is_available():
             # Clear out any old data from GPU memory (like emptying your backpack before school)
             torch.cuda.empty_cache()
-            
+
             # Move the entire AI model to GPU memory
             # This is like moving your textbooks from your backpack to your desk - makes work faster!
             # GPU can do thousands of calculations at the same time (parallel processing)
@@ -111,19 +112,19 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
         2. If that doesn't work, try the model's configuration
         3. If both fail, use a safe default of 512 tokens
         """
-        
+
         # STEP 1: Try to get max tokens from the tokenizer
         # The tokenizer knows how much text it can handle
         # model_max_length is a built-in property that most tokenizers have
         if self.tokenizer and hasattr(self.tokenizer, 'model_max_length'):
             max_length = self.tokenizer.model_max_length
-            
+
             # Sometimes tokenizers return a very large number (like 1000000000) 
             # which means "unlimited" but isn't practical
             # If we see this, we'll check the model config instead
             if max_length and max_length < 1000000:  # Reasonable max length
                 return max_length
-        
+
         # STEP 2: If tokenizer didn't give us a good answer, check the model's config
         # The model's configuration also stores max position embeddings
         # (max_position_embeddings = maximum number of tokens the model can handle at once)
@@ -131,19 +132,18 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
             # Try to get max_position_embeddings from the model config
             if hasattr(self.model.config, 'max_position_embeddings'):
                 return self.model.config.max_position_embeddings
-            
+
             # Some models use 'n_positions' instead of 'max_position_embeddings'
             # (different models use different names for the same thing)
             elif hasattr(self.model.config, 'n_positions'):
                 return self.model.config.n_positions
-        
+
         # STEP 3: If both methods above failed, use a safe default
         # 512 tokens is a common limit for many embedding models
         # Better to be cautious than to cause errors
         print("Warning: Could not determine max tokens from tokenizer or model config. Using default of 512.")
         return 512
 
-    
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
         Convert multiple text documents into numerical embeddings.
@@ -169,7 +169,7 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
         """
         # Create an empty list to store all our embeddings
         embeddings = []
-        
+
         # Process each text one at a time (loop through the list)
         for text in texts:
             # STEP 1: Tokenize the text
@@ -181,7 +181,7 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
             # - truncation=True: If text is too long, cut it off (models have max lengths)
             # - padding=True: If text is too short, add blank spaces to make it standard length
             inputs = self.tokenizer(text, return_tensors='pt', truncation=True, padding=True)
-            
+
             # STEP 2: Move the tokenized text to GPU if available
             # If we have a GPU, we need to move our data there too (model and data must be in same place)
             # It's like: if your calculator is on your desk, you need to bring your homework to the desk too!
@@ -197,7 +197,7 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
                 # The ** syntax unpacks the dictionary - it's like passing multiple arguments at once
                 # The model processes our text and returns complex output data
                 outputs = self.model(**inputs)
-            
+
             # STEP 4: Extract and simplify the embedding
             # The model returns lots of data; we just want the embedding part
             # 
@@ -216,11 +216,11 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
             # Note: If the tensor is on GPU, we MUST move it to CPU first before converting to numpy
             # NumPy arrays can only exist in CPU memory, not GPU memory
             embedding = outputs.last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
-            
+
             # STEP 5: Convert to a regular Python list and add to our collection
             # .tolist() converts numpy array to regular Python list (easier to work with)
             embeddings.append(embedding.tolist())
-        
+
         # Return all the embeddings we created
         return embeddings
 
@@ -249,5 +249,3 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
         """
         # Put text in a list, convert it, then extract the first (only) result
         return self.embed_documents([text])[0]
-    
-

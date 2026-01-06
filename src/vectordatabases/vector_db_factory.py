@@ -111,9 +111,6 @@ class VectorDBFactory:
         else:
             None
 
-
-
-
     @staticmethod
     def get_actual_db_embedding_dim(vector_db: VectorDBInterface) -> int:
         """
@@ -127,7 +124,7 @@ class VectorDBFactory:
         if vector_db is None:
             return None
         return vector_db.get_embedding_dim()
-    
+
     @staticmethod
     def get_available_vector_databases(validated_db: str) -> bool:
         """ Check and display available vector databases 

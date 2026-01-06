@@ -1,20 +1,21 @@
+import os
+from langchain.schema import Document
+from typing import List, Tuple, Optional
+
+from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
+from embeddings.huggingface_transformer.llama_index_embedding_derived import LlamaIndexHuggingFaceOfflineEmbeddings
 from ingestion.base_document_chunker import BaseDocumentChunker
 from ingestion.doc_parser_langchain import DocumentChunker
 from ingestion.doc_parser_llama_index import LlamaIndexDocumentChunker
-from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
-from embeddings.huggingface_transformer.llama_index_embedding_derived import LlamaIndexHuggingFaceOfflineEmbeddings
-from embeddings.vllm.langchain_embedding import VLLMOfflineEmbeddings
-from langchain.schema import Document
-from typing import List, Tuple, Optional
-import os
 
-def consolidate_collections_to_all(root_data_path = "/home/jmitchall/vllm-srv/data", document_collections = [
-        "vtm",
-        "dnd_dm",
-        "dnd_mm",
-        "dnd_raven",
-        "dnd_player"
-    ]):
+
+def consolidate_collections_to_all(root_data_path="/home/jmitchall/vllm-srv/data", document_collections=[
+    "vtm",
+    "dnd_dm",
+    "dnd_mm",
+    "dnd_raven",
+    "dnd_player"
+]):
     """
     Consolidate documents from multiple collection directories into a single 'all' collection.
     
@@ -44,8 +45,10 @@ def consolidate_collections_to_all(root_data_path = "/home/jmitchall/vllm-srv/da
                 dst = os.path.join(all_collection_path, f)
                 if not os.path.exists(dst):
                     os.symlink(src, dst)  # Create a symlink to avoid duplication
-   
-def load_and_chunk_texts(chunker: BaseDocumentChunker,  max_token_validator: int, **kwargs) -> Tuple[List[str], List[Document]]:
+
+
+def load_and_chunk_texts(chunker: BaseDocumentChunker, max_token_validator: int, **kwargs) -> Tuple[
+    List[str], List[Document]]:
     """
     Load and chunk documents using any document chunker implementation.
     
@@ -72,12 +75,14 @@ def load_and_chunk_texts(chunker: BaseDocumentChunker,  max_token_validator: int
         avg_words_per_token = calculate_avg_words_per_token(documents, tokenizer)
         print(f"   Calculated average words per token: {avg_words_per_token:.4f}")
     # Calculate optimal chunk parameters size and overlap 
-    chunker.calculate_optimal_chunk_parameters_given_max_tokens(max_token_validator, avg_words_per_token=avg_words_per_token)
-    chunk_texts , chunks = chunker.get_chunked_texts_list(documents)
+    chunker.calculate_optimal_chunk_parameters_given_max_tokens(max_token_validator,
+                                                                avg_words_per_token=avg_words_per_token)
+    chunk_texts, chunks = chunker.get_chunked_texts_list(documents)
 
     # Additional validation and fixing taking into consideration embedding model limits
     print(f"🔍 Validating chunk sizes based on max_tokens: {max_token_validator} ...")
     return chunker.validate_and_fix_chunks(chunk_texts, max_token_validator), chunks
+
 
 def load_llamaIndex_texts(d_path: str, max_token_validator: int, **kwargs) -> Tuple[List[str], List[Document]]:
     """
@@ -92,7 +97,8 @@ def load_llamaIndex_texts(d_path: str, max_token_validator: int, **kwargs) -> Tu
     chunker = LlamaIndexDocumentChunker(d_path, **kwargs)
     return load_and_chunk_texts(chunker, max_token_validator, **kwargs)
 
-def load_langchain_texts(d_path: str, max_token_validator: int , **kwargs) -> Tuple[List[str], List[Document]]:
+
+def load_langchain_texts(d_path: str, max_token_validator: int, **kwargs) -> Tuple[List[str], List[Document]]:
     """
     Legacy wrapper for LangChain-based chunking. Consider using load_and_chunk_texts directly.
 
@@ -103,11 +109,11 @@ def load_langchain_texts(d_path: str, max_token_validator: int , **kwargs) -> Tu
         List of validated and chunked text strings
     """
     print(f"🔍 Loading and LangChain-based chunking documents from {d_path} ...")
-    chunker = DocumentChunker(d_path, **kwargs) 
+    chunker = DocumentChunker(d_path, **kwargs)
     return load_and_chunk_texts(chunker, max_token_validator, **kwargs)
 
 
-def ingest_documents(vector_db_collection_name:str, chunked_documents: List[Document],
+def ingest_documents(vector_db_collection_name: str, chunked_documents: List[Document],
                      persistence_target_path: str, embedding_object):
     from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, get_quadrant_client, \
         qdrant_create_from_documents
@@ -146,9 +152,10 @@ def ingest_documents(vector_db_collection_name:str, chunked_documents: List[Docu
     return db_vectorstore
 
 
-def get_retriever_and_vector_stores(vdb_type:str, vector_db_persisted_path:str, 
-                                    collection_ref:str, retriever_embeddings) :
-    from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist ,get_quadrant_client, get_qdrant_retriever
+def get_retriever_and_vector_stores(vdb_type: str, vector_db_persisted_path: str,
+                                    collection_ref: str, retriever_embeddings):
+    from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist, \
+        get_quadrant_client, get_qdrant_retriever
     from vectordatabases.fais_vector_db_commands import create_faiss_vectorstore, get_faiss_retriever
     from vectordatabases.chroma_vector_db_commands import get_chroma_vectorstore, get_chroma_retriever
     langchain_retriever = None
@@ -161,7 +168,8 @@ def get_retriever_and_vector_stores(vdb_type:str, vector_db_persisted_path:str,
             # Reconnect to the persisted Qdrant database
             qdrant_client: QdrantClientSmartPointer = get_quadrant_client(vector_db_persisted_path)
             if quadrant_does_collection_exist(qdrant_client, collection_ref):
-                langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref, embeddings=retriever_embeddings, k=5)
+                langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref,
+                                                           embeddings=retriever_embeddings, k=5)
                 print(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
             else:
                 print(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
@@ -172,14 +180,15 @@ def get_retriever_and_vector_stores(vdb_type:str, vector_db_persisted_path:str,
                 retriever_embeddings
             )
             langchain_retriever = get_faiss_retriever(loaded_vectorstore_wrapper, k=5)
-        case "chroma": 
-            loaded_vectorstore = get_chroma_vectorstore(collection_ref, vector_db_persisted_path, 
+        case "chroma":
+            loaded_vectorstore = get_chroma_vectorstore(collection_ref, vector_db_persisted_path,
                                                         retriever_embeddings)
-            langchain_retriever =  get_chroma_retriever(loaded_vectorstore, k=5)
+            langchain_retriever = get_chroma_retriever(loaded_vectorstore, k=5)
         case _:
             raise ValueError(
                 f"Unsupported DATABASE_TYPE: {vdb_type}. Supported types are 'qdrant', 'faiss', 'chroma'.")
     return langchain_retriever, qdrant_client
+
 
 def calculate_avg_words_per_token(documents: List[Document], tokenizer) -> float:
     """
@@ -190,7 +199,7 @@ def calculate_avg_words_per_token(documents: List[Document], tokenizer) -> float
     """
     if not documents:
         return 0.75  # Default fallback
-    
+
     ratios = []
     for doc in documents[:10]:  # Sample first 10 docs for speed
         text = doc.page_content if hasattr(doc, 'page_content') else doc.text
@@ -198,15 +207,17 @@ def calculate_avg_words_per_token(documents: List[Document], tokenizer) -> float
             word_count = len(text.split())
             token_count = len(tokenizer.encode(text))
             ratios.append(word_count / token_count)
-    
+
     return sum(ratios) / len(ratios) if ratios else 0.75
 
-def get_pretty_dict_to_string(d: dict)-> str:
+
+def get_pretty_dict_to_string(d: dict) -> str:
     pretty_str = "{\n"
     for key, value in d.items():
         pretty_str += f"   {key}: {value}\n"
     pretty_str += "}"
     return pretty_str
+
 
 if __name__ == "__main__":
     root_path = "/home/jmitchall/vllm-srv"
@@ -218,7 +229,7 @@ if __name__ == "__main__":
         "dnd_raven",
         "dnd_player"
     ]
-    #consolidate_collections_to_all(root_data_path=root_data_path, document_collections=document_collections)
+    # consolidate_collections_to_all(root_data_path=root_data_path, document_collections=document_collections)
     embedding_model = "BAAI/bge-large-en-v1.5"
 
     database_types = [
@@ -228,8 +239,8 @@ if __name__ == "__main__":
     ]
 
     chunker_func = {
-     "langchain": load_langchain_texts,
-     "llamaindex": load_llamaIndex_texts
+        "langchain": load_langchain_texts,
+        "llamaindex": load_llamaIndex_texts
     }
 
     embeddings = HuggingFaceOfflineEmbeddings(model_name=embedding_model)
@@ -241,32 +252,34 @@ if __name__ == "__main__":
         DATABASE_TYPE = db_type.lower()
         qdrant_client_ref = None
         for collection_name in document_collections:
-            directory_path = f"{root_data_path}/{collection_name}" 
+            directory_path = f"{root_data_path}/{collection_name}"
             # place Collection name in persist path for FAISS because there is no concept of collection there
             # for Qdrant and Chroma we can use collection name directly
-            
-            print(f"\n📂 Processing collection '{collection_name}' from directory: {directory_path }" )
+
+            print(f"\n📂 Processing collection '{collection_name}' from directory: {directory_path}")
             # Load and chunk documents
             for chunker_key, chunker_loader in chunker_func.items():
                 print(f"\n🧩 Using chunker method: {chunker_key} ...")
-                vector_db_persisted_path =f"{root_path}/{chunker_key}_{collection_name}_{DATABASE_TYPE}"
+                vector_db_persisted_path = f"{root_path}/{chunker_key}_{collection_name}_{DATABASE_TYPE}"
 
-                chunk_texts, documents = chunker_loader(directory_path, max_token_validator=max_tokens, tokenizer=tokenizer)
+                chunk_texts, documents = chunker_loader(directory_path, max_token_validator=max_tokens,
+                                                        tokenizer=tokenizer)
 
                 ingest_documents(collection_name, documents, vector_db_persisted_path, embeddings)
 
-                retriever , qdrant_client_ref = get_retriever_and_vector_stores(DATABASE_TYPE, vector_db_persisted_path, collection_name, embeddings)
+                retriever, qdrant_client_ref = get_retriever_and_vector_stores(DATABASE_TYPE, vector_db_persisted_path,
+                                                                               collection_name, embeddings)
                 # perform a test retrieval
                 query = "What is a Rogue?"
                 if retriever is None:
-                    print(f"⚠️  Retriever could not be created for collection '{collection_name}'. Skipping retrieval test.")
+                    print(
+                        f"⚠️  Retriever could not be created for collection '{collection_name}'. Skipping retrieval test.")
                     continue
 
                 results = retriever.get_relevant_documents(query)
-                print(f"✅ Retrieved {len(results)} documents for query: '{query}'")    
+                print(f"✅ Retrieved {len(results)} documents for query: '{query}'")
                 for i, doc in enumerate(results):
-                   
-                    print( f"""
+                    print(f"""
         {"=" * 20} {DATABASE_TYPE} {collection_name} Document loader {chunker_key} Query {query} - Result {i + 1} {"=" * 20}
         Metadata Source/File path:{doc.metadata.get('source', doc.metadata.get('file_path', 'Unknown'))}
         page: {doc.metadata.get('page', 'N/A')}
@@ -279,11 +292,5 @@ if __name__ == "__main__":
         Metadata: {get_pretty_dict_to_string(doc.metadata)}
         {"=" * 80}
         """)
-                   
-        
+
     print("🎉 Ingestion complete!")
-
-
-    
-
-    

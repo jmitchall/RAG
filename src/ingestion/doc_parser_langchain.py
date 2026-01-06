@@ -1,24 +1,22 @@
 import glob
-
 import os
-
+from ingestion.base_document_chunker import BaseDocumentChunker
 from langchain.schema import Document
 from langchain_community.document_loaders import (
     TextLoader,
     PyMuPDFLoader,
 )
 from typing import List, Tuple
-from ingestion.base_document_chunker import BaseDocumentChunker
 
 
 class DocumentChunker(BaseDocumentChunker):
     def __init__(
             self, directory_path: str, **kwargs
     ):
-        
+
         self.directory_path = directory_path
-        self._chunk_size = kwargs.get("chunk_size", None) # CHARACTER LENGTH
-        self._chunk_overlap = kwargs.get("chunk_overlap", None) # CHARACTER LENGTH
+        self._chunk_size = kwargs.get("chunk_size", None)  # CHARACTER LENGTH
+        self._chunk_overlap = kwargs.get("chunk_overlap", None)  # CHARACTER LENGTH
         self._documents: List[Document] = []
 
     @property
@@ -114,7 +112,6 @@ class DocumentChunker(BaseDocumentChunker):
         else:
             return 1024  # Suitable for large chunks
 
-
     def _get_max_document_words(self) -> int:
         """
         Get the maximum word count from all documents.
@@ -146,14 +143,14 @@ class DocumentChunker(BaseDocumentChunker):
         """
         # Use 85% of max_tokens to leave safety margin for tokenization variance
         safe_max_tokens = int(max_tokens * 0.85)
-        
+
         # Convert tokens → words → characters
         avg_chars_per_word = 5.5  # Practical: Works well for most English text Including space after word
         self.estimated_chars_per_token = avg_chars_per_word * words_per_token  # chars/word x  words/token
-        
+
         # Calculate chunk size in characters
-        chunk_size_chars = int(safe_max_tokens * self.estimated_chars_per_token )
-        
+        chunk_size_chars = int(safe_max_tokens * self.estimated_chars_per_token)
+
         # Overlap should be 15-20% of chunk size for context continuity
         chunk_overlap_chars = int(chunk_size_chars * 0.15)
 
@@ -166,7 +163,8 @@ class DocumentChunker(BaseDocumentChunker):
 
         return chunk_size_chars, chunk_overlap_chars
 
-    def calculate_optimal_chunk_parameters_given_max_tokens(self, max_tokens: int , avg_words_per_token: float) -> Tuple[int, int]:
+    def calculate_optimal_chunk_parameters_given_max_tokens(self, max_tokens: int, avg_words_per_token: float) -> Tuple[
+        int, int]:
         """ Calculate optimal chunk size and overlap based on max tokens.                   
         Args:
             max_tokens: Maximum tokens allowed by the embedding model.
@@ -174,16 +172,17 @@ class DocumentChunker(BaseDocumentChunker):
             chunk_size: Optimal chunk size in characters.
             chunk_overlap: Optimal chunk overlap in characters.
         """
-        avg_words_per_sub_token = avg_words_per_token #self.calculate_avg_words_per_token()
+        avg_words_per_sub_token = avg_words_per_token  # self.calculate_avg_words_per_token()
         worst_token_in_all_documents = self.calculate_max_char_sub_tokens_per_word(avg_words_per_sub_token)
         target_chunk_size_tokens = min(max_tokens, worst_token_in_all_documents)
-        calculated_chunk_size_characters, calculated_chunk_overlap_characters = self.calculate_optimal_chunk_size(target_chunk_size_tokens,
-                                                                                            words_per_token=avg_words_per_sub_token)
+        calculated_chunk_size_characters, calculated_chunk_overlap_characters = self.calculate_optimal_chunk_size(
+            target_chunk_size_tokens,
+            words_per_token=avg_words_per_sub_token)
         self.chunk_size = calculated_chunk_size_characters or self.chunk_size
         self.chunk_overlap = calculated_chunk_overlap_characters or self.chunk_overlap
         return self.chunk_size, self.chunk_overlap
-    
-    def validate_and_fix_chunks(self,  chunk_texts: List[str], max_tokens: int) -> List[str]:
+
+    def validate_and_fix_chunks(self, chunk_texts: List[str], max_tokens: int) -> List[str]:
         """
         Additional validation and fixing of chunks that might still be too long.
         """
@@ -191,20 +190,20 @@ class DocumentChunker(BaseDocumentChunker):
 
         for i, chunk in enumerate(chunk_texts):
             characters = len(chunk)
-            #converts characters to tokens and ensure that the tokens don't exceed max_tokens
+            # converts characters to tokens and ensure that the tokens don't exceed max_tokens
             estimated_tokens = int(characters / self.estimated_chars_per_token) if self.estimated_chars_per_token else 0
             if estimated_tokens > max_tokens:
                 print(f"   ⚠️  Chunk {i + 1} still too long ({estimated_tokens} estimated tokens), re-truncating...")
 
                 # Ultra-conservative truncation limits
-                new_truncated_length = int(max_tokens * self.estimated_chars_per_token) if self.estimated_chars_per_token else characters
+                new_truncated_length = int(
+                    max_tokens * self.estimated_chars_per_token) if self.estimated_chars_per_token else characters
                 word_count = len(chunk.split())
                 chunk = chunk[:new_truncated_length]
                 new_word_count = len(chunk.split())
-                print(f"      ✂️  truncated {word_count} to {new_word_count} words")      
+                print(f"      ✂️  truncated {word_count} to {new_word_count} words")
             fixed_chunks.append(chunk)
         return fixed_chunks
-
 
 
 if __name__ == "__main__":
@@ -262,8 +261,3 @@ if __name__ == "__main__":
         print(f"\n--- Chunk {i + 1} ---")
         print(f"Source: {chunk.metadata.get('source', 'unknown')}")
         print(f"Content: {chunk.page_content[:200]}...")  # Print first 200 characters
-
-
-
-
-    
