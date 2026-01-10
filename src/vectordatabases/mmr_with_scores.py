@@ -7,7 +7,7 @@ return similarity scores by default. This module provides utilities to combine b
 
 from langchain.schema import Document
 from typing import List, Tuple
-
+from refection_logger import logger
 
 def compare_similarity_vs_mmr(vectorstore, query: str, k: int = 5,
                               fetch_k: int = 20, lambda_mult: float = 0.5) -> Tuple[List[Document], List[Document]]:
@@ -69,39 +69,39 @@ def print_comparison(sim_docs: List[Document], mmr_docs: List[Document]):
         sim_docs: Results from similarity search
         mmr_docs: Results from MMR search
     """
-    print("\n" + "=" * 80)
-    print("SIMILARITY SEARCH (Pure Relevance)")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("SIMILARITY SEARCH (Pure Relevance)")
+    logger.info("=" * 80)
     for i, doc in enumerate(sim_docs, 1):
         score = doc.metadata.get('similarity_score', 'N/A')
         distance = doc.metadata.get('distance', 'N/A')
         source = doc.metadata.get('source', 'unknown')
         page = doc.metadata.get('page', 'N/A')
 
-        print(f"\n{i}. Distance: {distance:.4f} | Score: {score:.4f}")
-        print(f"   Source: {source} (page {page})")
-        print(f"   Content: {doc.page_content[:150]}...")
+        logger.info(f"\n{i}. Distance: {distance:.4f} | Score: {score:.4f}")
+        logger.info(f"   Source: {source} (page {page})")
+        logger.info(f"   Content: {doc.page_content[:150]}...")
 
-    print("\n" + "=" * 80)
-    print("MMR SEARCH (Relevance + Diversity)")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("MMR SEARCH (Relevance + Diversity)")
+    logger.info("=" * 80)
     for i, doc in enumerate(mmr_docs, 1):
         source = doc.metadata.get('source', 'unknown')
         page = doc.metadata.get('page', 'N/A')
 
-        print(f"\n{i}. Rank #{i}")
-        print(f"   Source: {source} (page {page})")
-        print(f"   Content: {doc.page_content[:150]}...")
+        logger.info(f"\n{i}. Rank #{i}")
+        logger.info(f"   Source: {source} (page {page})")
+        logger.info(f"   Content: {doc.page_content[:150]}...")
 
     # Show overlap analysis
     sim_contents = {doc.page_content for doc in sim_docs}
     mmr_contents = {doc.page_content for doc in mmr_docs}
     overlap = sim_contents & mmr_contents
 
-    print("\n" + "=" * 80)
-    print(f"ANALYSIS: {len(overlap)}/{len(sim_docs)} documents are the same")
-    print(f"MMR introduced {len(mmr_docs) - len(overlap)} different documents for diversity")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info(f"ANALYSIS: {len(overlap)}/{len(sim_docs)} documents are the same")
+    logger.info(f"MMR introduced {len(mmr_docs) - len(overlap)} different documents for diversity")
+    logger.info("=" * 80)
 
 
 def get_mmr_with_scores(vectorstore, query: str, k: int = 5,
@@ -176,7 +176,7 @@ def get_mmr_with_scores(vectorstore, query: str, k: int = 5,
 
 # Example usage
 if __name__ == "__main__":
-    print("""
+    logger.info("""
 MMR WITH SCORES - USAGE EXAMPLES
 =================================
 

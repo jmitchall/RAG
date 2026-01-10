@@ -1,4 +1,12 @@
 from langchain_core.output_parsers import StrOutputParser
+from pathlib import Path
+import sys
+# Add parent directory to path for imports when running directly
+if __name__ == "__main__":
+    src_path = Path(__file__).parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+from refection_logger import logger
 
 
 def dict_to_str(d: dict) -> str:
@@ -54,7 +62,7 @@ def get_retriever_and_vector_stores(vdb_type: str, vector_db_persisted_path: str
     langchain_retriever = None
     qdrant_client: QdrantClientSmartPointer = None
     # test persisted vector store loading and retriever creation
-    print(
+    logger.info(
         f"\n🔍 Testing loading of persisted vector store for collection '{collection_ref}' from path: {vector_db_persisted_path} ...")
     match vdb_type:
         case "qdrant":
@@ -63,9 +71,9 @@ def get_retriever_and_vector_stores(vdb_type: str, vector_db_persisted_path: str
             if quadrant_does_collection_exist(qdrant_client, collection_ref):
                 langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref,
                                                            embeddings=retriever_embeddings, k=5)
-                print(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
+                logger.info(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
             else:
-                print(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
+                logger.info(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
                 langchain_retriever = None
         case "faiss":
             loaded_vectorstore_wrapper = create_faiss_vectorstore(
@@ -113,13 +121,13 @@ if __name__ == "__main__":
         ]
         collection_name = collection_names[-1]  # Choose one collection for this example
         root_path = "/home/jmitchall/vllm-srv"
-
+        root_persist_path = f"{root_path}/db"
         for chunker_key in chunker_func:
-            vector_db_persisted_path = f"{root_path}/{chunker_key}_{collection_name}_{DATABASE_TYPE}"
+            vector_db_persisted_path = f"{root_persist_path}/{chunker_key}_{collection_name}_{DATABASE_TYPE}"
             retriever, qdrant_client_ref = get_retriever_and_vector_stores(DATABASE_TYPE, vector_db_persisted_path,
                                                                            collection_name, embeddings)
             if retriever is None:
-                print(f"❌ Retriever could not be created. Exiting.")
+                logger.info(f"❌ Retriever could not be created. Exiting.")
                 exit(1)
 
             format_function = format_list_documents_as_string
@@ -138,19 +146,19 @@ if __name__ == "__main__":
             # 6. Invoke LECL Chain with test queries
             query = "What is a Rogue?"
             chat_result = chat_chain.invoke(query)
-            print("=" * 80)
-            print(chat_result)
+            logger.info("=" * 80)
+            logger.info(chat_result)
 
     except KeyboardInterrupt:
         # Handle Ctrl+C gracefully
-        print("\n\n⚠️  Interrupted by user. Cleaning up...")
+        logger.info("\n\n⚠️  Interrupted by user. Cleaning up...")
 
     except Exception as e:
-        # Catch any other errors and print them
-        print(f"\n❌ Error occurred: {e}")
+        # Catch any other errors and logger.info them
+        logger.info(f"\n❌ Error occurred: {e}")
         import traceback
 
-        traceback.print_exc()
+        traceback.logger.info_exc()
 
     finally:
         # =================================================================
@@ -158,6 +166,6 @@ if __name__ == "__main__":
         # =================================================================
         # This ensures proper resource cleanup and prevents the engine crash error
         if llm is not None:
-            print("\n🧹 Cleaning up vLLM resources...")
+            logger.info("\n🧹 Cleaning up vLLM resources...")
             cleanup_vllm_engine(llm)
-            print("✅ Cleanup completed successfully!")
+            logger.info("✅ Cleanup completed successfully!")

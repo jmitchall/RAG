@@ -6,7 +6,7 @@ from llama_index.vector_stores.qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from typing import List, Optional
-
+from refection_logger import logger
 
 # https://developers.llamaindex.ai/python/examples/vector_stores/qdrantindexdemo/
 
@@ -39,10 +39,10 @@ class QdrantClientSmartPointer:
         """Close the Qdrant client connection if it exists."""
         if self._client is not None:
             try:
-                print(f"🧹 Closing Qdrant client connection at {self.vector_db_persisted_path} ...")
+                logger.info(f"🧹 Closing Qdrant client connection at {self.vector_db_persisted_path} ...")
                 self._client.close()
             except Exception as e:
-                print(f"⚠️ Warning: Exception occurred while closing Qdrant client close: {e}")
+                logger.info(f"⚠️ Warning: Exception occurred while closing Qdrant client close: {e}")
             self._client = None
 
     def __del__(self):
@@ -152,17 +152,17 @@ def qdrant_only_add_documents_not_in_collection(
             if content_hash not in existing_content_hashes:
                 new_documents.append(doc)
 
-        # Print statistics for user feedback
+        # logger.info statistics for user feedback
         duplicate_count = len(documents) - len(new_documents)
         if duplicate_count > 0:
-            print(f"🔍 Found {duplicate_count} duplicate document(s), adding {len(new_documents)} new document(s)")
+            logger.info(f"🔍 Found {duplicate_count} duplicate document(s), adding {len(new_documents)} new document(s)")
 
         return new_documents
 
     except Exception as e:
         # If there's any error during checking, log it and return all documents
         # Better to add duplicates than to lose data
-        print(f"⚠️  Warning: Could not check for duplicates: {e}. Adding all documents.")
+        logger.info(f"⚠️  Warning: Could not check for duplicates: {e}. Adding all documents.")
         return documents
 
 
@@ -201,9 +201,9 @@ def qdrant_create_from_documents(qdrant_client_ptr: QdrantClientSmartPointer, co
                 embedding=embeddings,
             )
             vector_db.add_documents(filtered_documents)
-            print(f"✅ Added {len(filtered_documents)} new document(s) to Qdrant collection '{collection_name}'")
+            logger.info(f"✅ Added {len(filtered_documents)} new document(s) to Qdrant collection '{collection_name}'")
         else:
-            print(
+            logger.info(
                 f"ℹ️  No new documents to add - all {len(documents)} document(s) already exist in collection '{collection_name}'")
     else:
         # Collection doesn't exist, create it manually using the client
@@ -216,7 +216,7 @@ def qdrant_create_from_documents(qdrant_client_ptr: QdrantClientSmartPointer, co
             collection_name=collection_name,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
-        print(f"📦 Created empty Qdrant collection '{collection_name}' with vector size {vector_size}")
+        logger.info(f"📦 Created empty Qdrant collection '{collection_name}' with vector size {vector_size}")
         vector_db = Qdrant(
             client=qdrant_client_ptr.get_client(),
             collection_name=collection_name,
@@ -225,11 +225,11 @@ def qdrant_create_from_documents(qdrant_client_ptr: QdrantClientSmartPointer, co
 
         # Now add the documents
         vector_db.add_documents(documents)
-        print(f"✅ Added {len(documents)} document(s) to new collection '{collection_name}'")
+        logger.info(f"✅ Added {len(documents)} document(s) to new collection '{collection_name}'")
 
         # Note: Data is automatically persisted to disk when using QdrantClient with path parameter
         # No explicit persist() call is needed
-        print(f"💾 Data automatically persisted to disk (Qdrant local storage)")
+        logger.info(f"💾 Data automatically persisted to disk (Qdrant local storage)")
 
     return vector_db
 
@@ -255,7 +255,7 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5,
     Returns:
         Qdrant retriever object.
     """
-    print(f"🔍 Creating Qdrant vectorstore from client type: {type(qdrant_client_ptr.get_client())}")
+    logger.info(f"🔍 Creating Qdrant vectorstore from client type: {type(qdrant_client_ptr.get_client())}")
 
     loaded_vectorstore = Qdrant(
         client=qdrant_client_ptr.get_client(),
@@ -263,8 +263,8 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5,
         embedding=embeddings,
     )
 
-    print(f"🔍 Created vectorstore type: {type(loaded_vectorstore)}")
-    print(f"🔍 Vectorstore has similarity_search: {hasattr(loaded_vectorstore, 'similarity_search')}")
+    logger.info(f"🔍 Created vectorstore type: {type(loaded_vectorstore)}")
+    logger.info(f"🔍 Vectorstore has similarity_search: {hasattr(loaded_vectorstore, 'similarity_search')}")
 
     # Workaround: Use similarity_search directly instead of as_retriever()
     # Create a simple wrapper that acts as a retriever
@@ -278,13 +278,13 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5,
 
         def get_relevant_documents(self, query: str, *, run_manager: Optional[CallbackManagerForRetrieverRun] = None) -> \
         List[Document]:
-            print(f"🔍 get_relevant_documents called with vectorstore type: {type(self.vectorstore)}")
+            logger.info(f"🔍 get_relevant_documents called with vectorstore type: {type(self.vectorstore)}")
 
             documents = []
 
             if self.search_type == "mmr":
                 # Use MMR for diverse results (Qdrant supports this)
-                print(f"   🔍 Using MMR search")
+                logger.info(f"   🔍 Using MMR search")
                 docs = self.vectorstore.max_marginal_relevance_search(query, k=self.top_k)
                 query_embedding = self.embeddings.embed_query(query)
                 for idx, doc in enumerate(docs):
@@ -294,9 +294,9 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5,
                     source = doc.metadata.get('source', 'unknown')
                     similarity_score = doc.metadata.get('similarity_score', None)
                     if similarity_score is not None:
-                        print(f"   📄 MMR result | Source: {source} | Similarity Score: {similarity_score:.4f}")
+                        logger.info(f"   📄 MMR result | Source: {source} | Similarity Score: {similarity_score:.4f}")
                     else:
-                        print(f"   📄 MMR result | Source: {source}")
+                        logger.info(f"   📄 MMR result | Source: {source}")
                     documents.append(doc)
             else:
                 search_results = self.vectorstore.similarity_search_with_relevance_scores(query, k=self.top_k)
@@ -304,17 +304,17 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5,
                 for doc, score in search_results:
                     # Apply score threshold filtering if specified
                     if self.score_threshold is not None and score < self.score_threshold:
-                        print(f"   ⏭️  Skipping doc with score {score:.4f} < threshold {self.score_threshold}")
+                        logger.info(f"   ⏭️  Skipping doc with score {score:.4f} < threshold {self.score_threshold}")
                         continue
 
                     doc.metadata['similarity_score'] = score
                     doc.metadata['search_type'] = 'similarity'
                     source = doc.metadata.get('source', 'unknown')
-                    print(f"   📄 Similarity: {score:.4f} | Source: {source}")
+                    logger.info(f"   📄 Similarity: {score:.4f} | Source: {source}")
                     documents.append(doc)
 
             if self.score_threshold and len(documents) == 0:
-                print(f"   ⚠️  No documents met the score threshold of {self.score_threshold}")
+                logger.info(f"   ⚠️  No documents met the score threshold of {self.score_threshold}")
 
             return documents
 
@@ -339,7 +339,7 @@ def get_qdrant_retriever(qdrant_client_ptr, collection_name, embeddings, k=5,
                             norm(np.array(query_embedding)) * norm(np.array(doc_embedding)))
                 doc.metadata['similarity_score'] = float(cosine_similarity)
             except Exception as e:
-                print(f"   ⚠️  Warning: Could not compute cosine similarity for doc idx {idx}: {e}")
+                logger.info(f"   ⚠️  Warning: Could not compute cosine similarity for doc idx {idx}: {e}")
                 doc.metadata['similarity_score'] = None
 
         def format_list_documents_as_string(self, **kwargs) -> str:

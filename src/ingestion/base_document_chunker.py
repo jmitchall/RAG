@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from langchain.schema import Document
 from typing import List, Tuple
-
+from refection_logger import logger
 
 class BaseDocumentChunker(ABC):
     """
@@ -69,7 +69,7 @@ class BaseDocumentChunker(ABC):
             documents = self._documents
         document_chunks = self.chunk_documents(documents)
 
-        print(f"📊 Loaded {len(documents)} documents and created {len(document_chunks)} chunks")
+        logger.info(f"📊 Loaded {len(documents)} documents and created {len(document_chunks)} chunks")
         return [doc.page_content for doc in document_chunks], document_chunks
 
     @abstractmethod
@@ -158,10 +158,10 @@ class BaseDocumentChunker(ABC):
 
         chunk_size_chars = min(max_tokens, chunk_size_chars)  # Ensure chunk size does not exceed max_tokens
 
-        print(f"📐 Calculated chunk parameters:")
-        print(f"   Max tokens: {max_tokens}")
-        print(f"   Max words: {max_words}")
-        print(f"   Chunk size: {chunk_size_chars} characters")
-        print(f"   Chunk overlap: {chunk_overlap_chars} characters")
+        logger.info(f"📐 Calculated chunk parameters:")
+        logger.info(f"   Max tokens: {max_tokens}")
+        logger.info(f"   Max words: {max_words}")
+        logger.info(f"   Chunk size: {chunk_size_chars} characters")
+        logger.info(f"   Chunk overlap: {chunk_overlap_chars} characters")
 
         return chunk_size_chars, chunk_overlap_chars

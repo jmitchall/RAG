@@ -1,38 +1,43 @@
-from langchain_core.messages import  HumanMessage, SystemMessage, AIMessage
-from langgraph.graph import END, StateGraph
+import os
+import traceback
 from abc import ABC
-from typing import List,  Annotated, TypedDict
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
-import os
-import logging
-import traceback
-from inference.vllm_srv.minstral_langchain import get_langchain_vllm_mistral_quantized, convert_chat_prompt_to_minstral_prompt_value
+from langgraph.graph import END, StateGraph
+from typing import List, Annotated, TypedDict
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from pathlib import Path
+import sys
+# Add parent directory to path for imports when running directly
+if __name__ == "__main__":
+    src_path = Path(__file__).parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+
+from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
+from inference.vllm_srv.minstral_langchain import get_langchain_vllm_mistral_quantized
+from refection_logger import logger
+
 
 class ReflectionAgentState(TypedDict):
-            messages: Annotated[List[HumanMessage | AIMessage | SystemMessage], "add_messages"]
-            agent_instance: "ReflectionAgent" 
-            continue_refining: bool = True
-            question: str = ""
-            context:str = ""
+    messages: Annotated[List[HumanMessage | AIMessage | SystemMessage], "add_messages"]
+    agent_instance: "ReflectionAgent"
+    continue_refining: bool = True
+    question: str = ""
+    context: str = ""
+
 
 class ReflectionAgent(ABC):
 
-    def __init__(self, brain, embedding_model = "BAAI/bge-large-en-v1.5", root_path = "/home/jmitchall/vllm-srv" ,  similarity_threshold:float=0.65, **kwargs):
+    def __init__(self, brain, embedding_model="BAAI/bge-large-en-v1.5", root_path="/home/jmitchall/vllm-srv",
+                 similarity_threshold: float = 0.65, **kwargs):
         self.llm = brain
-        self.similarity_threshold =similarity_threshold
+        self.similarity_threshold = similarity_threshold
         # Create Generation Prompt for answer
         self.generation_chain = self.get_generation_chain()
         # Create Reflection Prompt for Answer Evaluation
-        self.reflection_chain= self.get_reflection_chain()
+        self.reflection_chain = self.get_reflection_chain()
         self.count = 0
         self.embeddings = HuggingFaceOfflineEmbeddings(model_name=embedding_model)
         self.collection_name = kwargs.get("collection_name")
@@ -42,38 +47,40 @@ class ReflectionAgent(ABC):
     def get_initial_state(self, question: str = "") -> ReflectionAgentState:
         context = ""
         if question:
-                retriever, _ = self.get_retriever()
-                if retriever:
-                    retrieved_docs = retriever.invoke(question)
-                    context = self.format_list_documents_as_string(results=retrieved_docs)
-                    logger.info(f"Retrieved {len(retrieved_docs)} documents for context")
-        
+            retriever, _ = self.get_retriever()
+            if retriever:
+                retrieved_docs = retriever.invoke(question)
+                context = self.format_list_documents_as_string(results=retrieved_docs)
+                logger.info(f"Retrieved {len(retrieved_docs)} documents for context")
+
         return ReflectionAgentState(
             agent_instance=self,
             question=question,
             context=context,
             messages=[HumanMessage(content=question)] if question else []
         )
-    
-    def get_retriever_and_vector_stores(self, vdb_type:str, vector_db_persisted_path:str, 
-                                    collection_ref:str, retriever_embeddings) :
-        from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist ,get_quadrant_client, get_qdrant_retriever
+
+    def get_retriever_and_vector_stores(self, vdb_type: str, vector_db_persisted_path: str,
+                                        collection_ref: str, retriever_embeddings):
+        from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist, \
+            get_quadrant_client, get_qdrant_retriever
         from vectordatabases.fais_vector_db_commands import create_faiss_vectorstore, get_faiss_retriever
         from vectordatabases.chroma_vector_db_commands import get_chroma_vectorstore, get_chroma_retriever
         langchain_retriever = None
         qdrant_client: QdrantClientSmartPointer = None
         # test persisted vector store loading and retriever creation
-        print(
+        logger.info(
             f"\n🔍 Testing loading of persisted vector store for collection '{collection_ref}' from path: {vector_db_persisted_path} ...")
         match vdb_type:
             case "qdrant":
                 # Reconnect to the persisted Qdrant database
                 qdrant_client: QdrantClientSmartPointer = get_quadrant_client(vector_db_persisted_path)
                 if quadrant_does_collection_exist(qdrant_client, collection_ref):
-                    langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref, embeddings=retriever_embeddings, k=5)
-                    print(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
+                    langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref,
+                                                               embeddings=retriever_embeddings, k=5)
+                    logger.info(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
                 else:
-                    print(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
+                    logger.info(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
                     langchain_retriever = None
             case "faiss":
                 loaded_vectorstore_wrapper = create_faiss_vectorstore(
@@ -81,27 +88,26 @@ class ReflectionAgent(ABC):
                     retriever_embeddings
                 )
                 langchain_retriever = get_faiss_retriever(loaded_vectorstore_wrapper, k=5)
-            case "chroma": 
-                loaded_vectorstore = get_chroma_vectorstore(collection_ref, vector_db_persisted_path, 
+            case "chroma":
+                loaded_vectorstore = get_chroma_vectorstore(collection_ref, vector_db_persisted_path,
                                                             retriever_embeddings)
-                langchain_retriever =  get_chroma_retriever(loaded_vectorstore, k=5)
+                langchain_retriever = get_chroma_retriever(loaded_vectorstore, k=5)
             case _:
                 raise ValueError(
                     f"Unsupported DATABASE_TYPE: {vdb_type}. Supported types are 'qdrant', 'faiss', 'chroma'.")
         return langchain_retriever, qdrant_client
-    
 
-    def get_retriever (self):
-         if self.DATABASE_TYPE and self.collection_name and self.root_path:
-            self.DATABASE_TYPE=  self.DATABASE_TYPE.lower()
-            vector_db_persisted_path =f"{self.root_path}/langchain_{self.collection_name}_{self.DATABASE_TYPE}"
-            #check if directory exists
+    def get_retriever(self):
+        if self.DATABASE_TYPE and self.collection_name and self.root_path:
+            self.DATABASE_TYPE = self.DATABASE_TYPE.lower()
+            vector_db_persisted_path = f"{self.root_path}/db/langchain_{self.collection_name}_{self.DATABASE_TYPE}"
+            # check if directory exists
             if os.listdir(vector_db_persisted_path):
-                return self. get_retriever_and_vector_stores(self.DATABASE_TYPE, vector_db_persisted_path , self.collection_name, self.embeddings)
+                return self.get_retriever_and_vector_stores(self.DATABASE_TYPE, vector_db_persisted_path,
+                                                            self.collection_name, self.embeddings)
             else:
                 raise ValueError(f" No Directory {vector_db_persisted_path}")
-            
-    
+
     def format_list_documents_as_string(self, **kwargs) -> str:
         """Format a list of Documents into a human-readable string with metadata.
         
@@ -115,21 +121,22 @@ class ReflectionAgent(ABC):
         results = kwargs.get('results', [])
         if not results:
             return ''
-        context =""
+        context = ""
         for i, doc in enumerate(results, 1):
-            
+
             similarity = doc.metadata.get("similarity_score", .7)
             if similarity < self.similarity_threshold:
-                print(f" Skipping :{ doc.metadata.get("source")}, page:{doc.metadata.get("page")} based on Threshold {self.similarity_threshold } ")
+                logger.info(
+                    f" Skipping :{doc.metadata.get("source")}, page:{doc.metadata.get("page")} based on Threshold {self.similarity_threshold} ")
                 continue
             context += doc.page_content + "\n\n"
 
         return context
 
-    def get_generation_chain(self): 
-              
+    def get_generation_chain(self):
+
         answer_generation_prompt = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template("""You are an expert Dungeuns and dragon Game Master. 
+            SystemMessagePromptTemplate.from_template("""You are an expert Dungeuns and dragon Game Master. 
     You recall all the rules in the following sources:
     1) Dungeon Master’s Guide - Dungeons & Dragons - Sources - D&D Beyond
     2) Monster Manual - Dungeons & Dragons - Sources - D&D Beyond
@@ -159,12 +166,12 @@ class ReflectionAgent(ABC):
 
     as needed.
         """),
-                # This is used to inject the actual content or message that the post will be based on.  
-                # The placeholder will be populated with the user’s request at runtime.
-                MessagesPlaceholder(variable_name="messages")  
-            ])
+            # This is used to inject the actual content or message that the post will be based on.
+            # The placeholder will be populated with the user’s request at runtime.
+            MessagesPlaceholder(variable_name="messages")
+        ])
         return answer_generation_prompt | self.llm
-    
+
     def get_reflection_chain(self):
         generated_reflection_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template("""You are an Dungeons and Dragon Player. You recall all the rules in the following sources:
@@ -199,12 +206,12 @@ class ReflectionAgent(ABC):
     """),
             # This is used to inject the actual content or message that the post will be based on.  
             # The placeholder will be populated with the user’s request at runtime.
-            MessagesPlaceholder(variable_name="messages")  
+            MessagesPlaceholder(variable_name="messages")
         ])
         return generated_reflection_prompt | self.llm
 
 
-def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
+def agent_generation_node(state: ReflectionAgentState) -> ReflectionAgentState:
     """
     In LangGraph Agent Flows are represented via Agent WorkFolws where 
     States accumulate and change base on their travels from Node to Node
@@ -219,27 +226,27 @@ def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
         question = state.get("question")
         context = state.get("context")
         ai_messages = state.get("messages")
-        
+
         logger.info(f"Generation node processing question: {question[:50]}...")
-        
+
         # Create Generation Prompt with context and question
         logger.info("Invoking generation chain...")
-        last_message =  [ ai_messages[-1] ]
+        last_message = [ai_messages[-1]]
         generated_response_and_answer = agent_components.generation_chain.invoke({
-                "question": question,
-                "context": context,
-                "messages": last_message
-            }
+            "question": question,
+            "context": context,
+            "messages": last_message
+        }
         )
         logger.info("Generation successful")
-        
+
     except Exception as e:
         logger.error(f"❌ Generation node failed: {str(e)}")
         logger.error(f"Full traceback:\n{traceback.format_exc()}")
         # Return error message in state
         error_msg = f"Generation failed: {str(e)}"
         return {**state, "messages": [AIMessage(content=error_msg)]}
-    
+
     if generated_response_and_answer and generated_response_and_answer.strip():
         answer_provided = True
     else:
@@ -248,10 +255,10 @@ def agent_generation_node( state: ReflectionAgentState) -> ReflectionAgentState:
         ai_messages = [AIMessage(content=generated_response_and_answer)]
     else:
         ai_messages.append(AIMessage(content=generated_response_and_answer))
-    return {**state, "continue_refining": answer_provided, "messages": ai_messages }
-        
+    return {**state, "continue_refining": answer_provided, "messages": ai_messages}
 
-def agent_reflection_node( state: ReflectionAgentState) -> ReflectionAgentState:
+
+def agent_reflection_node(state: ReflectionAgentState) -> ReflectionAgentState:
     """
     In LangGraph Agent Flows are represented via Agent WorkFolws where 
     States accumulate and change base on their travels from Node to Node
@@ -266,7 +273,7 @@ def agent_reflection_node( state: ReflectionAgentState) -> ReflectionAgentState:
         ai_messages = state.get("messages")
         question = state.get("question")
         logger.info("Invoking reflection chain...")
-        last_response =  [ ai_messages[-1] ]
+        last_response = [ai_messages[-1]]
         # Create Reflection on current meesages
         response_reflection = agent_components.reflection_chain.invoke(
             {
@@ -275,7 +282,7 @@ def agent_reflection_node( state: ReflectionAgentState) -> ReflectionAgentState:
             }
         )
         logger.info("Reflection successful")
-        
+
     except Exception as e:
         logger.error(f"❌ Reflection node failed: {str(e)}")
         logger.error(f"Full traceback:\n{traceback.format_exc()}")
@@ -286,89 +293,92 @@ def agent_reflection_node( state: ReflectionAgentState) -> ReflectionAgentState:
         critique_provided = True
     else:
         critique_provided = False
-    return {**state, "continue_refining": critique_provided , "messages": ai_messages , "context": response_reflection} # pretend human feedback
+    return {**state, "continue_refining": critique_provided, "messages": ai_messages,
+            "context": response_reflection}  # pretend human feedback
 
 
-def should_agent_reflect(state: ReflectionAgentState):  
+def should_agent_reflect(state: ReflectionAgentState):
     agent_components = state["agent_instance"]
-    if agent_components.count <2 and state.get("continue_refining", True):
-        agent_components.count +=1
+    if agent_components.count < 2 and state.get("continue_refining", True):
+        agent_components.count += 1
     else:
         state["continue_refining"] = False
         return END
     return "agent_reflection_node"
 
+
 def should_agent_retry(state: ReflectionAgentState):
-    if  state.get("continue_refining", True):
+    if state.get("continue_refining", True):
         return "agent_generation_node"
     return END
 
+
 if __name__ == "__main__":
-    from inference.vllm_srv.cleaner import cleanup_vllm_engine , force_gpu_memory_cleanup   
+    from inference.vllm_srv.cleaner import cleanup_vllm_engine, force_gpu_memory_cleanup
+
     force_gpu_memory_cleanup()
     llm = None
     try:
         logger.info("🚀 Starting Reflection Agent...")
-        
+
         # Create Agent Brain
         logger.info("Initializing vLLM engine...")
         llm = get_langchain_vllm_mistral_quantized(download_dir="./models")
         logger.info("✅ vLLM engine initialized successfully")
-        
+
         reflection_agent = ReflectionAgent(
-            brain=llm,embedding_model = "BAAI/bge-large-en-v1.5", 
-            root_path = "/home/jmitchall/vllm-srv" ,
-            collection_name= "dnd_player",
-            DATABASE_TYPE = "qdrant"
+            brain=llm, embedding_model="BAAI/bge-large-en-v1.5",
+            root_path="/home/jmitchall/vllm-srv",
+            collection_name="dnd_player",
+            DATABASE_TYPE="qdrant"
         )
         logger.info("✅ Reflection agent created")
 
         # Initialize a StateGraph
         graph = StateGraph(ReflectionAgentState)
-        
-        graph.add_node("agent_generation_node",agent_generation_node)
-        graph.add_node("agent_reflection_node",agent_reflection_node)
-        graph.add_conditional_edges( "agent_reflection_node", should_agent_retry )   
-        graph.add_conditional_edges("agent_generation_node",should_agent_reflect)
+
+        graph.add_node("agent_generation_node", agent_generation_node)
+        graph.add_node("agent_reflection_node", agent_reflection_node)
+        graph.add_conditional_edges("agent_reflection_node", should_agent_retry)
+        graph.add_conditional_edges("agent_generation_node", should_agent_reflect)
         graph.set_entry_point("agent_generation_node")
         workflow_graph = graph.compile()
         logger.info("✅ Workflow graph compiled")
-        
+
         query = "What is a Rogue"
         logger.info(f"Processing query: {query}")
 
         # Invoke workflow with initial state
-        result = workflow_graph.invoke(reflection_agent.get_initial_state (question=query))
+        result = workflow_graph.invoke(reflection_agent.get_initial_state(question=query))
         logger.info("✅ Workflow completed successfully")
         logger.info(f"Final result: {result["messages"][-1].content}")
-        
+
     except Exception as e:
         logger.error(f"❌ FATAL ERROR: {str(e)}")
         logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        
+
         # Try to get GPU info if available
         try:
             import subprocess
-            gpu_info = subprocess.check_output(['nvidia-smi', '--query-gpu=name,memory.total,memory.used,memory.free', '--format=csv'], 
-                                              stderr=subprocess.STDOUT).decode()
+
+            gpu_info = subprocess.check_output(
+                ['nvidia-smi', '--query-gpu=name,memory.total,memory.used,memory.free', '--format=csv'],
+                stderr=subprocess.STDOUT).decode()
             logger.error(f"GPU Status:\n{gpu_info}")
         except:
             logger.error("Could not retrieve GPU status")
-        
+
         raise
-    
+
     finally:
         # Suppress vLLM's benign exit message
         if llm is not None:
             logger.info("✅ Workflow complete, exiting...")
             import sys
             import os
+
             cleanup_vllm_engine(llm)
             # Suppress the benign "Engine core died" message by redirecting stderr
             # This message appears during normal shutdown and is not an error
             sys.stderr = open(os.devnull, 'w')
             # Engine will cleanup automatically when Python exits
-
-    
-
-

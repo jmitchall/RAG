@@ -3,7 +3,7 @@
 from langchain_community.llms import VLLM
 from langchain_core.prompt_values import StringPromptValue
 from vllm import SamplingParams  # LLM = Large Language Model, SamplingParams = AI response settings
-
+from refection_logger import logger
 # =============================================================================
 # CONFIGURATION SECTION - Choose your questions and AI model settings
 # =============================================================================
@@ -64,8 +64,8 @@ def get_langchain_vllm_facebook_opt_125m(download_dir=None):
 
     # Only 125 million parameters, if "./models/opt-125m" does not exist, 
     # it will be downloaded and saved there. 
-    print(f"✅ AI model loaded successfully!")
-    print(f"📊 Model: {llm}")
+    logger.info(f"✅ AI model loaded successfully!")
+    logger.info(f"📊 Model: {llm}")
     return llm
 
 

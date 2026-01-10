@@ -2,7 +2,7 @@ import torch
 from langchain_core.embeddings import Embeddings
 from transformers import AutoTokenizer, AutoModel
 from typing import List
-
+from refection_logger import logger
 
 # This class creates an "embeddings" system using HuggingFace models
 # WHAT ARE EMBEDDINGS? Think of them as translating words into a secret code of numbers
@@ -76,11 +76,11 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
             # GPU can do thousands of calculations at the same time (parallel processing)
             # CPU does calculations one at a time (serial processing)
             self.model.to('cuda')
-            print(f"⚡ Model loaded on GPU with dtype={self.torch_dtype}")
+            logger.info(f"⚡ Model loaded on GPU with dtype={self.torch_dtype}")
         else:
             # No GPU found, so we'll use the regular CPU (slower but works everywhere)
-            print(f"💻 Model loaded on CPU")
-        print(f"✅ Local model is ready to get embeddings")
+            logger.info(f"💻 Model loaded on CPU")
+        logger.info(f"✅ Local model is ready to get embeddings")
 
     @property
     def get_tokenizer(self):
@@ -141,7 +141,7 @@ class HuggingFaceOfflineEmbeddings(Embeddings):
         # STEP 3: If both methods above failed, use a safe default
         # 512 tokens is a common limit for many embedding models
         # Better to be cautious than to cause errors
-        print("Warning: Could not determine max tokens from tokenizer or model config. Using default of 512.")
+        logger.info("Warning: Could not determine max tokens from tokenizer or model config. Using default of 512.")
         return 512
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:

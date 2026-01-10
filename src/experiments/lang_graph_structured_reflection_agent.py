@@ -1,26 +1,31 @@
 import json
-import logging
 import os
 import re
+import sys
 import traceback
 from abc import ABC
+from pathlib import Path
+
+# Add parent directory to path for imports when running directly
+if __name__ == "__main__":
+    src_path = Path(__file__).parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+
 from langchain.output_parsers import PydanticOutputParser
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
+from refection_logger import logger
 from typing import List, Annotated, TypedDict
 
+from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist, \
+    get_quadrant_client, get_qdrant_retriever
+from vectordatabases.fais_vector_db_commands import create_faiss_vectorstore, get_faiss_retriever
+from vectordatabases.chroma_vector_db_commands import get_chroma_vectorstore, get_chroma_retriever
 from embeddings.huggingface_transformer.langchain_embedding import HuggingFaceOfflineEmbeddings
 from inference.vllm_srv.minstral_langchain import get_langchain_vllm_mistral_quantized
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 
 class ReflectionAgentState(TypedDict):
@@ -112,20 +117,20 @@ class ReflectionAgent(ABC):
             return_value = answer_generation_parser.parse(json_str)
             return return_value
         except Exception as answer_generation_excpt:
-            print(f"answer_generation_excpt : {answer_generation_excpt}")
+            logger.info(f"answer_generation_excpt : {answer_generation_excpt}")
 
         reflection_critique_parser = PydanticOutputParser(pydantic_object=CritiqueOfAnswerSchema)
         try:
             return_value = reflection_critique_parser.parse(json_str)
             return return_value
         except Exception as reflection_critique_excpt:
-            print(f"reflection_critique_parser : {reflection_critique_excpt}")
+            logger.info(f"reflection_critique_parser : {reflection_critique_excpt}")
 
         # Try direct JSON parsing
         try:
             return_value = json.loads(json_str)
         except Exception as json_parse_excpt:
-            print(f"json.loads error: {json_parse_excpt}")
+            logger.info(f"json.loads error: {json_parse_excpt}")
             return json_str  # Return original string if all parsing fails
 
         # Validate against schemas
@@ -140,7 +145,7 @@ class ReflectionAgent(ABC):
             return CritiqueOfAnswerSchema.model_validate(return_value)
 
             # If validation fails, return the raw data
-        print(f"Validation failed for both schemas. Returning raw data: {return_value}")
+        logger.info(f"Validation failed for both schemas. Returning raw data: {return_value}")
         return return_value
 
     @staticmethod
@@ -199,14 +204,10 @@ class ReflectionAgent(ABC):
 
     def get_retriever_and_vector_stores(self, vdb_type: str, vector_db_persisted_path: str,
                                         collection_ref: str, retriever_embeddings):
-        from vectordatabases.qdrant_vector_db_commands import QdrantClientSmartPointer, quadrant_does_collection_exist, \
-            get_quadrant_client, get_qdrant_retriever
-        from vectordatabases.fais_vector_db_commands import create_faiss_vectorstore, get_faiss_retriever
-        from vectordatabases.chroma_vector_db_commands import get_chroma_vectorstore, get_chroma_retriever
         langchain_retriever = None
         qdrant_client: QdrantClientSmartPointer = None
         # test persisted vector store loading and retriever creation
-        print(
+        logger.info(
             f"\n🔍 Testing loading of persisted vector store for collection '{collection_ref}' from path: {vector_db_persisted_path} ...")
         match vdb_type:
             case "qdrant":
@@ -215,9 +216,9 @@ class ReflectionAgent(ABC):
                 if quadrant_does_collection_exist(qdrant_client, collection_ref):
                     langchain_retriever = get_qdrant_retriever(qdrant_client, collection_ref,
                                                                embeddings=retriever_embeddings, k=5)
-                    print(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
+                    logger.info(f"✅ Created Qdrant retriever wrapper for collection '{collection_ref}'")
                 else:
-                    print(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
+                    logger.info(f"⚠️  Collection '{collection_ref}' does not exist yet. Skipping retrieval test.")
                     langchain_retriever = None
             case "faiss":
                 loaded_vectorstore_wrapper = create_faiss_vectorstore(
@@ -237,7 +238,8 @@ class ReflectionAgent(ABC):
     def get_retriever(self):
         if self.DATABASE_TYPE and self.collection_name and self.root_path:
             self.DATABASE_TYPE = self.DATABASE_TYPE.lower()
-            vector_db_persisted_path = f"{self.root_path}/langchain_{self.collection_name}_{self.DATABASE_TYPE}"
+            root_persist_path = f"{self.root_path}/db"
+            vector_db_persisted_path = f"{root_persist_path}/langchain_{self.collection_name}_{self.DATABASE_TYPE}"
             # check if directory exists
             if os.listdir(vector_db_persisted_path):
                 return self.get_retriever_and_vector_stores(self.DATABASE_TYPE, vector_db_persisted_path,
@@ -263,7 +265,7 @@ class ReflectionAgent(ABC):
 
             similarity = doc.metadata.get("similarity_score", .7)
             if similarity < self.similarity_threshold:
-                print(
+                logger.info(
                     f" Skipping :{doc.metadata.get("source")}, page:{doc.metadata.get("page")} based on Threshold {self.similarity_threshold} ")
                 continue
             context += doc.page_content + "\n\n"
@@ -491,7 +493,7 @@ def agent_reflection_node(state: ReflectionAgentState) -> ReflectionAgentState:
             """
             critique_provided = response_reflection_obj.revision_needed
             if response_reflection_obj.clarity <= .5 or response_reflection_obj.succinct <= .5 or response_reflection_obj.readabilty <= .5 and not critique_provided:
-                print(f""" 
+                logger.info(f""" 
 INCORRECT EVALUATION:
                     clarity: {response_reflection_obj.clarity}
                     succinct:{response_reflection_obj.succinct}

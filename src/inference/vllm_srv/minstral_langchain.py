@@ -1,6 +1,6 @@
 # Import the main libraries we need from vLLM
 import json
-import logging
+
 import re
 from inference.vllm_srv.cleaner import check_gpu_memory_status, force_gpu_memory_cleanup
 from inference.vllm_srv.cleaner import cleanup_vllm_engine
@@ -15,8 +15,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import Field
 from typing import Any, Dict, List, Optional, Sequence, Union, Callable
-
-logger = logging.getLogger(__name__)
+from refection_logger import logger
 
 
 def messages_to_mistral_prompt(messages: Sequence[BaseMessage]) -> str:
@@ -304,8 +303,9 @@ class VLLMChatModel(BaseChatModel):
 
         # Generate response using VLLM
         try:
+            logger.info(f"LLM PROMPT:\n{prompt} ")
             response_text = self.vllm_model.invoke(prompt, stop=stop, **kwargs)
-
+            logger.info(f"LLM RESPONSE to prompt:\n {response_text} ")
             if self.ignore_tools:
                 tool_calls = []
                 clean_content = response_text
@@ -399,7 +399,7 @@ def get_langchain_vllm_mistral_quantized(download_dir=None, gpu_memory_utilizati
                                          max_model_len: int = 16384, top_k: int = 5,
                                          max_tokens: int = 512, temperature: float = 0.7) -> VLLM:
     model_name = "TheBloke/Mistral-7B-Instruct-v0.2-GPTQ"
-    print(check_gpu_memory_status())
+    logger.info(check_gpu_memory_status())
     # Try full configuration first
     try:
         # Common VLLM kwargs for both branches
@@ -417,14 +417,14 @@ def get_langchain_vllm_mistral_quantized(download_dir=None, gpu_memory_utilizati
         # Add download_dir if provided
         if download_dir is not None:
             vllm_kwargs["download_dir"] = download_dir
-        print(vllm_kwargs)
+        logger.info(vllm_kwargs)
         return_vllm = VLLM(**vllm_kwargs)
         return return_vllm
 
     except Exception as e:
         logger.warning(f"Failed to create VLLM with full configuration: {e}")
         logger.info("Trying simplified VLLM configuration...")
-        print(check_gpu_memory_status())
+        logger.info(check_gpu_memory_status())
         # Fallback to simpler configuration
         try:
             simple_kwargs = {
@@ -445,7 +445,7 @@ def get_langchain_vllm_mistral_quantized(download_dir=None, gpu_memory_utilizati
             return return_vllm
 
         except Exception as e2:
-            print(check_gpu_memory_status())
+            logger.info(check_gpu_memory_status())
             logger.error(f"Failed to create VLLM with simplified configuration: {e2}")
             # Try minimal configuration as last resort
             minimal_kwargs = {

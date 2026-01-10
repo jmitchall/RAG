@@ -5,7 +5,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from llama_index.vector_stores.faiss import FaissVectorStore
 from typing import List, Optional
-
+from refection_logger import logger
 
 # https://developers.llamaindex.ai/python/examples/vector_stores/faissindexdemo/
 
@@ -18,13 +18,13 @@ class FAISSVectorStore:
         # Clean up resources if needed
         if self.persist_path:
             try:
-                print(f"🧹 Saving  FAISS vectorstore resources at {self.persist_path}")
+                logger.info(f"🧹 Saving  FAISS vectorstore resources at {self.persist_path}")
                 self.faiss_vectorstore.save_local(self.persist_path)
-                print(f"✅ FAISS vectorstore saved successfully")
+                logger.info(f"✅ FAISS vectorstore saved successfully")
             except ImportError as e:
                 pass
             except Exception as e:
-                print(f"⚠️  Error saving FAISS vectorstore: {e}")
+                logger.info(f"⚠️  Error saving FAISS vectorstore: {e}")
 
     def __del__(self):
         try:
@@ -80,7 +80,7 @@ def get_faiss_retriever(
 
             if self.search_type == "mmr":
                 # Use MMR for diverse, relevant results
-                print(f"   🔍 Using MMR search (fetch_k={self.fetch_k}, lambda={self.lambda_mult})")
+                logger.info(f"   🔍 Using MMR search (fetch_k={self.fetch_k}, lambda={self.lambda_mult})")
                 docs = self.vectorstore.max_marginal_relevance_search(
                     query,
                     k=self.top_k,
@@ -96,9 +96,9 @@ def get_faiss_retriever(
                     source = doc.metadata.get('source', 'unknown')
                     similarity_score = doc.metadata.get('similarity_score', None)
                     if similarity_score is not None:
-                        print(f"   📄 MMR result | Source: {source} | Similarity Score: {similarity_score:.4f}")
+                        logger.info(f"   📄 MMR result | Source: {source} | Similarity Score: {similarity_score:.4f}")
                     else:
-                        print(f"   📄 MMR result | Source: {source}")
+                        logger.info(f"   📄 MMR result | Source: {source}")
                     documents.append(doc)
 
             else:
@@ -114,7 +114,7 @@ def get_faiss_retriever(
                     doc.metadata['distance'] = distance  # Raw distance (lower = more similar)
                     doc.metadata['search_type'] = 'similarity'
                     source = doc.metadata.get('source', 'unknown')
-                    print(f"   📄 Distance: {distance:.4f} (lower=better) | Source: {source}")
+                    logger.info(f"   📄 Distance: {distance:.4f} (lower=better) | Source: {source}")
                     documents.append(doc)
 
             return documents
@@ -139,9 +139,9 @@ def get_faiss_retriever(
                 cosine_similarity = dot(np.array(query_embedding), np.array(doc_embedding)) / (
                             norm(np.array(query_embedding)) * norm(np.array(doc_embedding)))
                 doc.metadata['similarity_score'] = cosine_similarity
-                print(f"      🔢 Similarity Score: {cosine_similarity:.4f}")
+                logger.info(f"      🔢 Similarity Score: {cosine_similarity:.4f}")
             except Exception as e:
-                print(f"      ⚠️ Error computing cosine similarity for doc idx {idx}: {e}")
+                logger.info(f"      ⚠️ Error computing cosine similarity for doc idx {idx}: {e}")
 
     # Get embeddings from vectorstore
     embeddings = faiss_vectorstore_ptr.faiss_vectorstore.embedding_function
@@ -175,7 +175,7 @@ def create_faiss_vectorstore(vector_db_persisted_path: str, embeddings: Embeddin
             raise ValueError("Vector DB persisted path is required.")
         local_file = vector_db_persisted_path
 
-        print(f"🔍 Testing loading of persisted vector store from path: {local_file} ...")
+        logger.info(f"🔍 Testing loading of persisted vector store from path: {local_file} ...")
         faiss_vectorstore = FAISS.load_local(
             local_file,
             embeddings,
@@ -186,12 +186,12 @@ def create_faiss_vectorstore(vector_db_persisted_path: str, embeddings: Embeddin
             # LangChain's FAISS implementation now requires explicit acknowledgment of this risk via
             allow_dangerous_deserialization=True
         )
-        print(f"✅ FAISS vector store loaded from {local_file}")
+        logger.info(f"✅ FAISS vector store loaded from {local_file}")
         faiss_vectorstore_wrapper = FAISSVectorStore(faiss_vectorstore, vector_db_persisted_path)
     except Exception as e:
-        print(f"⚠️  WARNING unable to load FAISS vector store: {e}")
+        logger.info(f"⚠️  WARNING unable to load FAISS vector store: {e}")
         # If loading fails (e.g., store doesn't exist), create a new one with a dummy document
-        print(f"📝 Creating new empty FAISS vector store at {vector_db_persisted_path}")
+        logger.info(f"📝 Creating new empty FAISS vector store at {vector_db_persisted_path}")
         dummy_doc = Document(page_content="Initialization document", metadata={"source": "init"})
         faiss_vectorstore = FAISS.from_documents(
             [dummy_doc],
@@ -202,7 +202,7 @@ def create_faiss_vectorstore(vector_db_persisted_path: str, embeddings: Embeddin
         # Save the newly created vector store to disk for future use
         faiss_vectorstore.save_local(vector_db_persisted_path)
         faiss_vectorstore_wrapper = FAISSVectorStore(faiss_vectorstore, vector_db_persisted_path)
-        print(f"✅ FAISS vector store created and saved to {vector_db_persisted_path}")
+        logger.info(f"✅ FAISS vector store created and saved to {vector_db_persisted_path}")
     return faiss_vectorstore_wrapper
 
 
@@ -229,12 +229,12 @@ def faiss_create_from_documents(vector_db_persisted_path: str, documents: List[D
 
         # add only new documents not already in the collection
         if filtered_docs:
-            print(f"➕ Adding {len(filtered_docs)} new documents to FAISS vector store.")
+            logger.info(f"➕ Adding {len(filtered_docs)} new documents to FAISS vector store.")
             faiss_vectorstore_wrapper.faiss_vectorstore.add_documents(filtered_docs)
 
         faiss_vectorstore_wrapper.faiss_vectorstore.save_local(vector_db_persisted_path)
     except Exception as e:
-        print(f"❌ Error creating FAISS vector store: {e}")
+        logger.info(f"❌ Error creating FAISS vector store: {e}")
         # If loading fails (e.g., store doesn't exist), create a new one from documents
         faiss_vectorstore = FAISS.from_documents(
             documents,
@@ -243,7 +243,7 @@ def faiss_create_from_documents(vector_db_persisted_path: str, documents: List[D
         # Save the newly created vector store to disk for future use
         faiss_vectorstore.save_local(vector_db_persisted_path)
         faiss_vectorstore_wrapper = FAISSVectorStore(faiss_vectorstore, vector_db_persisted_path)
-        print(f"✅ FAISS vector store created and saved to {vector_db_persisted_path}")
+        logger.info(f"✅ FAISS vector store created and saved to {vector_db_persisted_path}")
         return faiss_vectorstore_wrapper.faiss_vectorstore
 
     return faiss_vectorstore_wrapper
@@ -273,8 +273,8 @@ def faiss_only_add_documents_not_in_collection(
     new_documents = [doc for doc in documents if doc.metadata.get("source") not in existing_doc_ids]
     if new_documents:
         faiss_vectorstore_ptr.faiss_vectorstore.add_documents(new_documents)
-        print(f"➕ Added {len(new_documents)} new documents to FAISS vector store.")
+        logger.info(f"➕ Added {len(new_documents)} new documents to FAISS vector store.")
     else:
-        print("ℹ️ No new documents to add to FAISS vector store.")
+        logger.info("ℹ️ No new documents to add to FAISS vector store.")
 
     return new_documents

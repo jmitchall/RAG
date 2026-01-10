@@ -1,7 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import List, Dict
-
+from refection_logger import logger
 from vllm import LLM
 
 
@@ -21,7 +21,7 @@ class EmbeddingModelInterface(ABC):
         # Store max tokens to prevent context length errors
         self._max_tokens = max_tokens
         self._safe_embedding_dim = 0
-        print(f"📏 Text will be truncated to {self.max_tokens} tokens to avoid context length errors")
+        logger.info(f"📏 Text will be truncated to {self.max_tokens} tokens to avoid context length errors")
 
     @property
     def safe_embedding_dim(self) -> int:

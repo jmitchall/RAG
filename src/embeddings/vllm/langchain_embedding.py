@@ -2,7 +2,7 @@ import torch
 from langchain_core.embeddings import Embeddings
 from typing import List
 from vllm import LLM
-
+from refection_logger import logger
 
 # This class creates an "embeddings" system using vLLM (a fast AI model library)
 # Think of embeddings as converting text into numbers that computers can understand and compare
@@ -44,7 +44,7 @@ class VLLMOfflineEmbeddings(Embeddings):
         # CUDA is the technology that lets us use NVIDIA graphics cards for AI
         if device == "cuda" and not torch.cuda.is_available():
             # If user asked for GPU but it's not available, warn them and use CPU instead
-            print("Warning: CUDA not available, falling back to CPU")
+            logger.info("Warning: CUDA not available, falling back to CPU")
             device = "cpu"
 
         # STEP 2: Create the actual AI model (called a "client" here)
@@ -180,7 +180,7 @@ class VLLMOfflineEmbeddings(Embeddings):
 
 # # 4. Invoke the chain
 # response = chain.invoke("What is vLLM?")
-# print(response)
+# logger.info(response)
 
 
 #  Setup Embeddings & Vector Store

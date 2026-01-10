@@ -1,15 +1,9 @@
 import gc
-# Configure logging
-import logging
+from refection_logger import logger
 import subprocess
 import sys
 import warnings
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -59,9 +53,9 @@ def cleanup_vllm_engine(llm_instance):
             gc.collect()
 
     except Exception as e:
-        # If cleanup fails, it's usually not critical - just print a note
+        # If cleanup fails, it's usually not critical - just logger.info a note
         # The error during cleanup doesn't affect the actual functionality
-        print(f"Note: Cleanup encountered non-critical issue: {e}")
+        logger.info(f"Note: Cleanup encountered non-critical issue: {e}")
         pass
 
 

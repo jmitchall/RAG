@@ -8,7 +8,7 @@ from llama_index.core.schema import BaseNode
 from llama_index.core.schema import Document
 from llama_index.readers.file import PyMuPDFReader
 from typing import List, Optional, Tuple, Callable
-
+from refection_logger import logger
 
 class LlamaIndexDocumentChunker(BaseDocumentChunker):
     def __init__(
@@ -85,7 +85,7 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
         """
         # Validate directory path
         if not os.path.exists(self.directory_path):
-            print(f"❌ Directory does not exist: {self.directory_path}")
+            logger.info(f"❌ Directory does not exist: {self.directory_path}")
             return []
 
         self._documents = SimpleDirectoryReader(
@@ -94,7 +94,7 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
             recursive=True,
             file_extractor=self.file_extractor
         ).load_data()
-        print(f"📄 Loaded {len(self._documents)} unique documents from {self.directory_path}")
+        logger.info(f"📄 Loaded {len(self._documents)} unique documents from {self.directory_path}")
 
         return self._documents
 
@@ -108,17 +108,17 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
 
         # Iterate through each file and its pages
         for file_path, file_docs in docs_by_file.items():
-            print("=" * 20 + f" File: {file_path}" + "=" * 40)
-            print(f"   📄 Total pages: {len(file_docs)}")
+            logger.info("=" * 20 + f" File: {file_path}" + "=" * 40)
+            logger.info(f"   📄 Total pages: {len(file_docs)}")
 
             # Iterate through each page
             all_text = ""
             for i, doc in enumerate(file_docs, 1):
                 page_num = doc.metadata.get('page_label', i)
-                print(f"\n   📄 Page {page_num}:")
-                print(f"      📚 Text length: {len(doc.text)} characters")
-                print(f"      📊 Word count: {len(doc.text.split())} words")
-                print(f"      📝 First 100 chars: {doc.text[:100]}")
+                logger.info(f"\n   📄 Page {page_num}:")
+                logger.info(f"      📚 Text length: {len(doc.text)} characters")
+                logger.info(f"      📊 Word count: {len(doc.text.split())} words")
+                logger.info(f"      📝 First 100 chars: {doc.text[:100]}")
 
                 # Accumulate all text from all pages
                 all_text += doc.text + "\n\n"
@@ -128,8 +128,8 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(all_text)
-            print(f"\n   💾 Full text ({len(file_docs)} pages) saved to: {output_file}")
-            print(f"   📏 Total text length: {len(all_text)} characters")
+            logger.info(f"\n   💾 Full text ({len(file_docs)} pages) saved to: {output_file}")
+            logger.info(f"   📏 Total text length: {len(all_text)} characters")
 
     def recommend_embedding_dimension(self) -> int:
         """
@@ -242,11 +242,11 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
         chunk_size_chars_approx = int(chunk_size_tokens * self.estimated_chars_per_token)
         chunk_overlap_chars_approx = int(chunk_overlap_tokens * self.estimated_chars_per_token)
 
-        print(f"📐 Calculated chunk parameters:")
-        print(f"   Max tokens (limit): {max_tokens}")
-        print(f"   Chunk size: {chunk_size_tokens} tokens (~{chunk_size_chars_approx} chars)")
-        print(f"   Chunk overlap: {chunk_overlap_tokens} tokens (~{chunk_overlap_chars_approx} chars)")
-        print(
+        logger.info(f"📐 Calculated chunk parameters:")
+        logger.info(f"   Max tokens (limit): {max_tokens}")
+        logger.info(f"   Chunk size: {chunk_size_tokens} tokens (~{chunk_size_chars_approx} chars)")
+        logger.info(f"   Chunk overlap: {chunk_overlap_tokens} tokens (~{chunk_overlap_chars_approx} chars)")
+        logger.info(
             f"   Safety margin: {max_tokens - chunk_size_tokens} tokens ({((max_tokens - chunk_size_tokens) / max_tokens * 100):.1f}%)")
 
         return chunk_size_tokens, chunk_overlap_tokens
@@ -280,7 +280,7 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
             # converts characters to tokens and ensure that the tokens don't exceed max_tokens
             estimated_tokens = int(characters / self.estimated_chars_per_token) if self.estimated_chars_per_token else 0
             if estimated_tokens > max_tokens:
-                print(f"   ⚠️  Chunk {i + 1} still too long ({estimated_tokens} estimated tokens), re-truncating...")
+                logger.info(f"   ⚠️  Chunk {i + 1} still too long ({estimated_tokens} estimated tokens), re-truncating...")
 
                 # Ultra-conservative truncation limits
                 new_truncated_length = int(
@@ -288,7 +288,7 @@ class LlamaIndexDocumentChunker(BaseDocumentChunker):
                 word_count = len(chunk.split())
                 chunk = chunk[:new_truncated_length]
                 new_word_count = len(chunk.split())
-                print(f"      ✂️  truncated {word_count} to {new_word_count} words")
+                logger.info(f"      ✂️  truncated {word_count} to {new_word_count} words")
             fixed_chunks.append(chunk)
         return fixed_chunks
 
@@ -311,12 +311,12 @@ if __name__ == "__main__":
         with open(sample_pdf_as_txt, "w") as f:
             f.write("This simulates PDF content for testing purposes. " * 100)
 
-        print(f"📁 Created test directory and sample files: {directory_path}")
+        logger.info(f"📁 Created test directory and sample files: {directory_path}")
 
     chunker = LlamaIndexDocumentChunker(directory_path, chunk_size=1000, chunk_overlap=200)
     documents = chunker.directory_to_documents()
 
-    print(f"\n📊 Summary: Loaded {len(documents)} documents total")
+    logger.info(f"\n📊 Summary: Loaded {len(documents)} documents total")
 
     # Group by file type
     by_extension = {}
@@ -327,12 +327,12 @@ if __name__ == "__main__":
         by_extension[ext] = by_extension.get(ext, 0) + 1
 
     for ext, count in by_extension.items():
-        print(f"   {ext.upper()}: {count} documents")
+        logger.info(f"   {ext.upper()}: {count} documents")
 
     # Chunk documents
     all_chunks = chunker.chunk_documents(documents)
 
-    print(f"\n📊 Summary: Created {len(all_chunks)} chunks total")
+    logger.info(f"\n📊 Summary: Created {len(all_chunks)} chunks total")
 
     # Group chunks by file type
     chunk_by_extension = {}
@@ -342,10 +342,10 @@ if __name__ == "__main__":
         chunk_by_extension[ext] = chunk_by_extension.get(ext, 0) + 1
 
     for ext, count in chunk_by_extension.items():
-        print(f"   {ext.upper()}: {count} chunks")
+        logger.info(f"   {ext.upper()}: {count} chunks")
 
-    # Example: Print first 2 chunks
+    # Example: logger.info first 2 chunks
     for i, chunk in enumerate(all_chunks[:2]):
-        print(f"\n--- Chunk {i + 1} ---")
-        print(f"Source: {chunk.metadata.get('source', 'unknown')}")
-        print(f"Content: {chunk.page_content[:200]}...")  # Print first 200 characters
+        logger.info(f"\n--- Chunk {i + 1} ---")
+        logger.info(f"Source: {chunk.metadata.get('source', 'unknown')}")
+        logger.info(f"Content: {chunk.page_content[:200]}...")  # Print first 200 characters

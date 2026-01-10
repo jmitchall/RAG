@@ -8,7 +8,7 @@ tool calling functionality with VLLM and Mistral models.
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
-
+from refection_logger import logger
 from minstral_langchain import create_vllm_chat_model
 
 
@@ -67,7 +67,7 @@ def calculate(expression: str) -> str:
 def main():
     """Main example function."""
 
-    print("🚀 Creating VLLM Chat Model with tool calling support...")
+    logger.info("🚀 Creating VLLM Chat Model with tool calling support...")
 
     # Create the chat model with tool calling support
     # Adjust parameters based on your GPU capabilities
@@ -79,7 +79,7 @@ def main():
         temperature=0.7
     )
 
-    print("✅ Model created successfully!")
+    logger.info("✅ Model created successfully!")
 
     # Define tools to bind
     tools = [get_weather, calculate]
@@ -87,12 +87,12 @@ def main():
     # Bind tools to the model
     model_with_tools = chat_model.bind_tools(tools)
 
-    print("🔧 Tools bound to model")
+    logger.info("🔧 Tools bound to model")
 
     # Example 1: Simple question without tools
-    print("\n" + "=" * 50)
-    print("Example 1: Simple conversation")
-    print("=" * 50)
+    logger.info("\n" + "=" * 50)
+    logger.info("Example 1: Simple conversation")
+    logger.info("=" * 50)
 
     messages = [
         SystemMessage(content="You are a helpful assistant."),
@@ -100,12 +100,12 @@ def main():
     ]
 
     response = model_with_tools.invoke(messages)
-    print(f"Assistant: {response.content}")
+    logger.info(f"Assistant: {response.content}")
 
     # Example 2: Weather tool calling
-    print("\n" + "=" * 50)
-    print("Example 2: Weather tool calling")
-    print("=" * 50)
+    logger.info("\n" + "=" * 50)
+    logger.info("Example 2: Weather tool calling")
+    logger.info("=" * 50)
 
     messages = [
         SystemMessage(content="You are a helpful assistant that can check weather."),
@@ -113,22 +113,22 @@ def main():
     ]
 
     response = model_with_tools.invoke(messages)
-    print(f"Assistant: {response.content}")
+    logger.info(f"Assistant: {response.content}")
 
     if response.tool_calls:
-        print(f"Tool calls made: {len(response.tool_calls)}")
+        logger.info(f"Tool calls made: {len(response.tool_calls)}")
         for i, tool_call in enumerate(response.tool_calls):
-            print(f"  {i + 1}. {tool_call['name']} with args: {tool_call['args']}")
+            logger.info(f"  {i + 1}. {tool_call['name']} with args: {tool_call['args']}")
 
             # Execute the tool (in real usage, you'd handle this in an agent loop)
             if tool_call['name'] == 'get_weather':
                 result = get_weather(**tool_call['args'])
-                print(f"     Result: {result}")
+                logger.info(f"     Result: {result}")
 
     # Example 3: Math tool calling
-    print("\n" + "=" * 50)
-    print("Example 3: Math calculation")
-    print("=" * 50)
+    logger.info("\n" + "=" * 50)
+    logger.info("Example 3: Math calculation")
+    logger.info("=" * 50)
 
     messages = [
         SystemMessage(content="You are a helpful assistant that can perform calculations."),
@@ -136,21 +136,21 @@ def main():
     ]
 
     response = model_with_tools.invoke(messages)
-    print(f"Assistant: {response.content}")
+    logger.info(f"Assistant: {response.content}")
 
     if response.tool_calls:
-        print(f"Tool calls made: {len(response.tool_calls)}")
+        logger.info(f"Tool calls made: {len(response.tool_calls)}")
         for i, tool_call in enumerate(response.tool_calls):
-            print(f"  {i + 1}. {tool_call['name']} with args: {tool_call['args']}")
+            logger.info(f"  {i + 1}. {tool_call['name']} with args: {tool_call['args']}")
 
             if tool_call['name'] == 'calculate':
                 result = calculate(**tool_call['args'])
-                print(f"     Result: {result}")
+                logger.info(f"     Result: {result}")
 
     # Example 4: Multiple tool usage
-    print("\n" + "=" * 50)
-    print("Example 4: Multiple tool usage")
-    print("=" * 50)
+    logger.info("\n" + "=" * 50)
+    logger.info("Example 4: Multiple tool usage")
+    logger.info("=" * 50)
 
     messages = [
         SystemMessage(content="You are a helpful assistant with access to weather and calculation tools."),
@@ -159,24 +159,24 @@ def main():
     ]
 
     response = model_with_tools.invoke(messages)
-    print(f"Assistant: {response.content}")
+    logger.info(f"Assistant: {response.content}")
 
     if response.tool_calls:
-        print(f"Tool calls made: {len(response.tool_calls)}")
+        logger.info(f"Tool calls made: {len(response.tool_calls)}")
         for i, tool_call in enumerate(response.tool_calls):
-            print(f"  {i + 1}. {tool_call['name']} with args: {tool_call['args']}")
+            logger.info(f"  {i + 1}. {tool_call['name']} with args: {tool_call['args']}")
 
             if tool_call['name'] == 'get_weather':
                 result = get_weather(**tool_call['args'])
-                print(f"     Weather result: {result}")
+                logger.info(f"     Weather result: {result}")
             elif tool_call['name'] == 'calculate':
                 result = calculate(**tool_call['args'])
-                print(f"     Calculation result: {result}")
+                logger.info(f"     Calculation result: {result}")
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print(f"❌ Error running example: {e}")
-        print("Make sure you have VLLM installed and a compatible GPU available.")
+        logger.info(f"❌ Error running example: {e}")
+        logger.info("Make sure you have VLLM installed and a compatible GPU available.")

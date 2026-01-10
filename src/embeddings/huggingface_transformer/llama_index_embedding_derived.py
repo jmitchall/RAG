@@ -1,6 +1,6 @@
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from typing import Optional
-
+from refection_logger import logger
 
 class LlamaIndexHuggingFaceOfflineEmbeddings(HuggingFaceEmbedding):
     """
@@ -82,13 +82,13 @@ if __name__ == "__main__":
     # Test embedding generation
     text = "This is a sample text for embedding."
     embedding = embeddings2.get_text_embedding(text)
-    print(f"Generated embedding dimension: {len(embedding)}")
-    print(f"First 5 values: {embedding[:5]}")
+    logger.info(f"Generated embedding dimension: {len(embedding)}")
+    logger.info(f"First 5 values: {embedding[:5]}")
 
     # Test query embedding
     query = "What is machine learning?"
     query_embedding = embeddings2.get_query_embedding(query)
-    print(f"\nQuery embedding dimension: {len(query_embedding)}")
+    logger.info(f"\nQuery embedding dimension: {len(query_embedding)}")
 
     # Test batch embeddings
     texts = [
@@ -97,4 +97,4 @@ if __name__ == "__main__":
         "Third document"
     ]
     batch_embeddings = [embeddings2.get_text_embedding(t) for t in texts]
-    print(f"\nGenerated {len(batch_embeddings)} batch embeddings")
+    logger.info(f"\nGenerated {len(batch_embeddings)} batch embeddings")

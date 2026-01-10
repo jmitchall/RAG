@@ -8,7 +8,7 @@ from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from typing import List, Optional
 from vectordatabases.vector_db_interface import VectorDBInterface
-
+from refection_logger import logger
 try:
     from qdrant_client import QdrantClient
     from qdrant_client.models import Distance, VectorParams, PointStruct, OptimizersConfigDiff, HnswConfigDiff
@@ -47,9 +47,9 @@ class QdrantVectorDB(VectorDBInterface):
 
         # Scenario 1: Load from existing persist_path only
         if persist_path and not embedding_dim and not host and not port:
-            print(f"🔄 Loading from persist_path: {persist_path}")
+            logger.info(f"🔄 Loading from persist_path: {persist_path}")
             if not self.load():
-                print(f"❌ Failed to load from {persist_path}. Need embedding_dim to create new collection.")
+                logger.info(f"❌ Failed to load from {persist_path}. Need embedding_dim to create new collection.")
                 return
         # Scenario 2: Create new or connect to existing
         elif embedding_dim:
@@ -58,9 +58,9 @@ class QdrantVectorDB(VectorDBInterface):
         else:
             raise ValueError("Must provide either persist_path (to load) or embedding_dim (to create new)")
 
-        # print list of lloaded Collections
+        # logger.info list of lloaded Collections
         collections = self.get_list_of_collections()
-        print(f"📂 Available Qdrant collections: {collections}")
+        logger.info(f"📂 Available Qdrant collections: {collections}")
 
     def get_list_of_collections(self) -> List[str]:
         """Get list of collections in Qdrant"""
@@ -72,20 +72,20 @@ class QdrantVectorDB(VectorDBInterface):
             collection_names = [col.name for col in collections.collections]
             return collection_names
         except Exception as e:
-            print(f"❌ Failed to get collections: {e}")
+            logger.info(f"❌ Failed to get collections: {e}")
             return []
 
     def prepare(self, host, port, prefer_server):
         # Check GPU availability
         self.gpu_available = torch.cuda.is_available() and self.use_gpu
         if self.gpu_available:
-            print(f"🚀 GPU detected: {torch.cuda.get_device_name(0)}")
-            print(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+            logger.info(f"🚀 GPU detected: {torch.cuda.get_device_name(0)}")
+            logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
         else:
             if self.use_gpu:
-                print(f"⚠️  GPU requested but not available, using CPU")
+                logger.info(f"⚠️  GPU requested but not available, using CPU")
             else:
-                print(f"💻 Using CPU (GPU disabled)")
+                logger.info(f"💻 Using CPU (GPU disabled)")
 
         self.init_client(host, port, prefer_server)
 
@@ -97,7 +97,7 @@ class QdrantVectorDB(VectorDBInterface):
         # Only setup collection if we didn't load successfully
         if not loaded:
             self._setup_collection()
-            print(f"✅ Created new Qdrant collection: {self.collection_name}")
+            logger.info(f"✅ Created new Qdrant collection: {self.collection_name}")
 
     def init_client(self, host: str = None, port: int = None,
                     prefer_server: bool = False) -> None:
@@ -110,31 +110,31 @@ class QdrantVectorDB(VectorDBInterface):
         # Only try server connection if explicitly requested
         if prefer_server and host and port:
             try:
-                print(f"🔍 Attempting to connect to Qdrant server at {host}:{port}...")
+                logger.info(f"🔍 Attempting to connect to Qdrant server at {host}:{port}...")
                 test_client = QdrantClient(host=host, port=port, timeout=5)
                 # Test the connection with a simple operation
                 test_client.get_collections()
                 self.client = test_client
-                print(f"✅ Connected to Qdrant server at {host}:{port}")
+                logger.info(f"✅ Connected to Qdrant server at {host}:{port}")
                 self.server_mode = True
             except Exception as e:
-                print(f"ℹ️  Qdrant server not available ({e})")
-                print(f"🔄 Using in-memory Qdrant database instead...")
+                logger.info(f"ℹ️  Qdrant server not available ({e})")
+                logger.info(f"🔄 Using in-memory Qdrant database instead...")
         else:
             if not prefer_server:
-                print(f"💻 Using in-memory Qdrant database (server not requested)")
+                logger.info(f"💻 Using in-memory Qdrant database (server not requested)")
             else:
-                print(f"💻 Using in-memory Qdrant database (no server configured)")
+                logger.info(f"💻 Using in-memory Qdrant database (no server configured)")
 
         # Use in-memory if server connection failed or wasn't attempted
         if self.client is None:
             try:
                 self.client = QdrantClient(":memory:")
                 if not prefer_server:
-                    print(f"✅ In-memory Qdrant database initialized")
+                    logger.info(f"✅ In-memory Qdrant database initialized")
                 self.server_mode = False
             except Exception as e:
-                print(f"❌ Failed to create in-memory Qdrant client: {e}")
+                logger.info(f"❌ Failed to create in-memory Qdrant client: {e}")
                 raise RuntimeError(f"Could not initialize Qdrant client: {e}")
 
     def _get_optimized_config(self):
@@ -188,8 +188,8 @@ class QdrantVectorDB(VectorDBInterface):
         try:
             # Try to get existing collection
             collection_info = self.client.get_collection(self.collection_name)
-            print(f"📂 Found existing Qdrant collection: {self.collection_name}")
-            print(f"📊 Points in collection: {collection_info.points_count}")
+            logger.info(f"📂 Found existing Qdrant collection: {self.collection_name}")
+            logger.info(f"📊 Points in collection: {collection_info.points_count}")
 
             # Update collection with optimized config if it's a server
             if self.server_mode:
@@ -201,12 +201,12 @@ class QdrantVectorDB(VectorDBInterface):
                         hnsw_config=config["hnsw_config"]
                     )
                     optimization_type = "GPU-optimized" if self.gpu_available else "CPU-optimized"
-                    print(f"⚙️  Updated collection with {optimization_type} configuration")
+                    logger.info(f"⚙️  Updated collection with {optimization_type} configuration")
                 except Exception as e:
-                    print(f"ℹ️  Could not update collection config: {e}")
+                    logger.info(f"ℹ️  Could not update collection config: {e}")
 
         except Exception as excep:
-            print(f"❌ Failed to get collection : {excep}")
+            logger.info(f"❌ Failed to get collection : {excep}")
             # Create new collection with optimized configuration
             try:
                 config = self._get_optimized_config()
@@ -225,10 +225,10 @@ class QdrantVectorDB(VectorDBInterface):
 
                 optimization_type = "GPU-optimized" if self.gpu_available else "CPU-optimized"
                 mode = "server" if self.server_mode else "in-memory"
-                print(f"✅ Created new {optimization_type} Qdrant collection ({mode}): {self.collection_name}")
+                logger.info(f"✅ Created new {optimization_type} Qdrant collection ({mode}): {self.collection_name}")
 
             except Exception as create_e:
-                print(f"⚠️  Failed to create collection with optimized config: {create_e}")
+                logger.info(f"⚠️  Failed to create collection with optimized config: {create_e}")
                 # Try creating with minimal configuration as fallback
                 try:
                     vector_config = VectorParams(
@@ -240,10 +240,10 @@ class QdrantVectorDB(VectorDBInterface):
                         collection_name=self.collection_name,
                         vectors_config=vector_config
                     )
-                    print(f"✅ Created Qdrant collection with basic configuration: {self.collection_name}")
+                    logger.info(f"✅ Created Qdrant collection with basic configuration: {self.collection_name}")
 
                 except Exception as basic_e:
-                    print(f"❌ Failed to create collection with basic config: {basic_e}")
+                    logger.info(f"❌ Failed to create collection with basic config: {basic_e}")
                     raise RuntimeError(f"Could not create Qdrant collection: {basic_e}")
 
     def get_max_document_length(self) -> int:
@@ -257,7 +257,7 @@ class QdrantVectorDB(VectorDBInterface):
 
         # Convert embeddings to GPU tensors if available for faster processing
         if self.gpu_available and len(embeddings) > 100:
-            print(f"🚀 Using GPU for embedding preprocessing...")
+            logger.info(f"🚀 Using GPU for embedding preprocessing...")
             try:
                 # Convert to GPU tensors for faster batch processing
                 gpu_embeddings = torch.tensor(np.array(embeddings), device='cuda')
@@ -265,9 +265,9 @@ class QdrantVectorDB(VectorDBInterface):
                 gpu_embeddings = torch.nn.functional.normalize(gpu_embeddings, p=2, dim=1)
                 # Convert back to CPU numpy arrays for Qdrant
                 embeddings = gpu_embeddings.cpu().numpy()
-                print(f"✅ Processed {len(embeddings)} embeddings on GPU")
+                logger.info(f"✅ Processed {len(embeddings)} embeddings on GPU")
             except Exception as e:
-                print(f"⚠️  GPU processing failed, using CPU: {e}")
+                logger.info(f"⚠️  GPU processing failed, using CPU: {e}")
 
         points = []
         start_idx = len(self.documents)
@@ -276,7 +276,7 @@ class QdrantVectorDB(VectorDBInterface):
         batch_size = 1000 if self.gpu_available else 500
         total_points = len(docs)
 
-        print(f"📄 Adding {total_points} documents to vector database in batches of {batch_size}...")
+        logger.info(f"📄 Adding {total_points} documents to vector database in batches of {batch_size}...")
 
         for batch_start in range(0, total_points, batch_size):
             batch_end = min(batch_start + batch_size, total_points)
@@ -303,19 +303,19 @@ class QdrantVectorDB(VectorDBInterface):
                     collection_name=self.collection_name,
                     points=batch_points
                 )
-                print(f"   ✅ Processed batch {batch_start + 1}-{batch_end} of {total_points}")
+                logger.info(f"   ✅ Processed batch {batch_start + 1}-{batch_end} of {total_points}")
             except Exception as e:
-                print(f"   ❌ Failed to upsert batch {batch_start + 1}-{batch_end}: {e}")
+                logger.info(f"   ❌ Failed to upsert batch {batch_start + 1}-{batch_end}: {e}")
                 raise
 
         self.documents.extend(docs)
-        print(f"📄 Added {len(docs)} documents to Qdrant vector database")
-        print(f"📊 Total documents: {len(self.documents)}")
+        logger.info(f"📄 Added {len(docs)} documents to Qdrant vector database")
+        logger.info(f"📊 Total documents: {len(self.documents)}")
 
         # Optimize collection after adding documents if using server
         if self.server_mode and len(docs) > 1000:
             try:
-                print(f"⚙️  Optimizing collection for better search performance...")
+                logger.info(f"⚙️  Optimizing collection for better search performance...")
                 # This will trigger index optimization
                 self.client.update_collection(
                     collection_name=self.collection_name,
@@ -323,14 +323,14 @@ class QdrantVectorDB(VectorDBInterface):
                         indexing_threshold=max(1000, len(self.documents) // 10)
                     )
                 )
-                print(f"✅ Collection optimization triggered")
+                logger.info(f"✅ Collection optimization triggered")
             except Exception as e:
-                print(f"ℹ️  Could not trigger optimization: {e}")
+                logger.info(f"ℹ️  Could not trigger optimization: {e}")
 
     def search(self, query_embedding: np.ndarray, top_k: int = 5,
                search_params: Optional[dict] = None) -> List[Document]:
         if len(self.documents) == 0:
-            print("⚠️  No documents in vector database to search")
+            logger.info("⚠️  No documents in vector database to search")
             return []
 
         if query_embedding.shape[0] != self.embedding_dim:
@@ -345,7 +345,7 @@ class QdrantVectorDB(VectorDBInterface):
                 gpu_query = torch.nn.functional.normalize(gpu_query.unsqueeze(0), p=2, dim=1)
                 query_embedding = gpu_query.squeeze(0).cpu().numpy()
             except Exception as e:
-                print(f"⚠️  GPU query preprocessing failed: {e}")
+                logger.info(f"⚠️  GPU query preprocessing failed: {e}")
 
         # Set search parameters based on GPU availability
         if search_params is None:
@@ -384,18 +384,18 @@ class QdrantVectorDB(VectorDBInterface):
 
             if documents:
                 search_type = "GPU-accelerated" if self.gpu_available else "CPU"
-                print(f"🔍 Found {len(documents)} similar documents ({search_type} search)")
+                logger.info(f"🔍 Found {len(documents)} similar documents ({search_type} search)")
 
             return documents
 
         except Exception as e:
-            print(f"❌ Qdrant search failed: {e}")
+            logger.info(f"❌ Qdrant search failed: {e}")
             return []
 
     def save(self) -> None:
         if not self.persist_path:
             mode = "server" if self.server_mode else "in-memory"
-            print(f"ℹ️  No persist_path set, Qdrant data persisted in {mode} collection")
+            logger.info(f"ℹ️  No persist_path set, Qdrant data persisted in {mode} collection")
             return
 
         # Save document metadata for consistency
@@ -405,7 +405,7 @@ class QdrantVectorDB(VectorDBInterface):
         with open(docs_file, 'wb') as f:
             pickle.dump(self.documents, f)
 
-        print(f"💾 Qdrant metadata saved to {docs_file}")
+        logger.info(f"💾 Qdrant metadata saved to {docs_file}")
 
         # Save GPU configuration info
         config_file = f"{self.persist_path}.qdrant.config.pkl"
@@ -425,7 +425,7 @@ class QdrantVectorDB(VectorDBInterface):
         # Save collection snapshot (vectors and payloads) for in-memory mode
         if not self.server_mode:
             try:
-                print(f"💾 Saving collection vectors and payloads...")
+                logger.info(f"💾 Saving collection vectors and payloads...")
                 # Get all points from collection
                 collection_info = self.client.get_collection(self.collection_name)
                 total_points = collection_info.points_count
@@ -471,11 +471,11 @@ class QdrantVectorDB(VectorDBInterface):
                     with open(points_file, 'wb') as f:
                         pickle.dump(points_data, f)
 
-                    print(f"💾 Saved {len(points_data)} collection points to {points_file}")
+                    logger.info(f"💾 Saved {len(points_data)} collection points to {points_file}")
             except Exception as e:
-                print(f"⚠️  Could not save collection points: {e}")
+                logger.info(f"⚠️  Could not save collection points: {e}")
         else:
-            print(f"ℹ️  Server mode: collection data persisted on Qdrant server")
+            logger.info(f"ℹ️  Server mode: collection data persisted on Qdrant server")
 
     def load(self) -> bool:
         """Load documents and configuration from persisted files"""
@@ -488,7 +488,7 @@ class QdrantVectorDB(VectorDBInterface):
 
         # Check if files exist
         if not os.path.exists(docs_file) or not os.path.exists(config_file):
-            print(f"ℹ️  No existing Qdrant data found at {self.persist_path}")
+            logger.info(f"ℹ️  No existing Qdrant data found at {self.persist_path}")
             return False
 
         try:
@@ -509,34 +509,34 @@ class QdrantVectorDB(VectorDBInterface):
 
             # Initialize client if not already done
             if self.client is None:
-                print(f"🔄 Initializing Qdrant client from saved configuration...")
+                logger.info(f"🔄 Initializing Qdrant client from saved configuration...")
                 self.init_client(self.host, self.port, self.prefer_server)
 
             # Load documents
             with open(docs_file, 'rb') as f:
                 self.documents = pickle.load(f)
 
-            print(f"💾 Loaded {len(self.documents)} documents from {docs_file}")
+            logger.info(f"💾 Loaded {len(self.documents)} documents from {docs_file}")
 
             # Try to connect to existing collection
             collection_exists = False
             try:
                 collection_info = self.client.get_collection(self.collection_name)
-                print(f"📂 Connected to existing collection: {self.collection_name}")
-                print(f"📊 Points in collection: {collection_info.points_count}")
+                logger.info(f"📂 Connected to existing collection: {self.collection_name}")
+                logger.info(f"📊 Points in collection: {collection_info.points_count}")
                 collection_exists = True
 
                 # Verify point count matches
                 if collection_info.points_count != len(self.documents):
-                    print(
+                    logger.info(
                         f"⚠️  Warning: Collection has {collection_info.points_count} points but loaded {len(self.documents)} documents")
 
             except Exception as e:
-                print(f"ℹ️  Collection '{self.collection_name}' not found: {e}")
+                logger.info(f"ℹ️  Collection '{self.collection_name}' not found: {e}")
 
             # If collection doesn't exist and we have saved points, restore them
             if not collection_exists and os.path.exists(points_file):
-                print(f"🔄 Restoring collection from saved points...")
+                logger.info(f"🔄 Restoring collection from saved points...")
 
                 # Create collection
                 self._setup_collection()
@@ -546,7 +546,7 @@ class QdrantVectorDB(VectorDBInterface):
                     with open(points_file, 'rb') as f:
                         points_data = pickle.load(f)
 
-                    print(f"� Restoring {len(points_data)} points to collection...")
+                    logger.info(f"� Restoring {len(points_data)} points to collection...")
 
                     # Batch upsert for better performance
                     batch_size = 1000 if self.gpu_available else 500
@@ -565,27 +565,27 @@ class QdrantVectorDB(VectorDBInterface):
                             collection_name=self.collection_name,
                             points=batch_points
                         )
-                        print(f"   ✅ Restored batch {batch_start + 1}-{batch_end} of {len(points_data)}")
+                        logger.info(f"   ✅ Restored batch {batch_start + 1}-{batch_end} of {len(points_data)}")
 
-                    print(f"✅ Successfully restored {len(points_data)} points to collection")
+                    logger.info(f"✅ Successfully restored {len(points_data)} points to collection")
 
                 except Exception as e:
-                    print(f"❌ Failed to restore points: {e}")
+                    logger.info(f"❌ Failed to restore points: {e}")
                     return False
 
             elif not collection_exists:
-                print(f"⚠️  No collection or saved points found. Collection needs to be recreated with add_documents()")
+                logger.info(f"⚠️  No collection or saved points found. Collection needs to be recreated with add_documents()")
                 # Create empty collection
                 self._setup_collection()
 
             mode = "server" if self.server_mode else "in-memory"
-            print(f"✅ Qdrant data loaded from {self.persist_path} ({mode} mode)")
+            logger.info(f"✅ Qdrant data loaded from {self.persist_path} ({mode} mode)")
             return True
 
         except Exception as e:
-            print(f"❌ Failed to load Qdrant data: {e}")
+            logger.info(f"❌ Failed to load Qdrant data: {e}")
             import traceback
-            traceback.print_exc()
+            traceback.logger.info_exc()
             return False
 
     def get_total_documents(self) -> int:
@@ -619,7 +619,7 @@ class QdrantVectorDB(VectorDBInterface):
         persist_path: str = kwargs.get('persist_path', self.persist_path)
         try:
             self.client.delete_collection(collection_name=collection_name)
-            print(f"🗑️  Deleted Qdrant collection: {collection_name}")
+            logger.info(f"🗑️  Deleted Qdrant collection: {collection_name}")
 
             # Remove persisted files if they exist
             if self.persist_path:
@@ -630,14 +630,14 @@ class QdrantVectorDB(VectorDBInterface):
                 for file in [docs_file, config_file, points_file]:
                     if os.path.exists(file):
                         os.remove(file)
-                        print(f"🗑️  Removed persisted file: {file}")
+                        logger.info(f"🗑️  Removed persisted file: {file}")
 
             # Clear in-memory documents
             self.documents = []
 
             return True
         except Exception as e:
-            print(f"❌ Failed to delete collection: {e}")
+            logger.info(f"❌ Failed to delete collection: {e}")
             return False
 
     def as_langchain_retriever(self, embedding_function, top_k: int = 5):
