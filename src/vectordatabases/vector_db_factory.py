@@ -1,5 +1,5 @@
 from typing import Optional, Type
-
+from refection_logger import logger
 from vectordatabases.chroma_vector_db import ChromaVectorDB
 from vectordatabases.faiss_vector_db import FaissVectorDB
 from vectordatabases.qdrant_vector_db import QdrantVectorDB
@@ -111,9 +111,6 @@ class VectorDBFactory:
         else:
             None
 
-
-
-
     @staticmethod
     def get_actual_db_embedding_dim(vector_db: VectorDBInterface) -> int:
         """
@@ -127,25 +124,25 @@ class VectorDBFactory:
         if vector_db is None:
             return None
         return vector_db.get_embedding_dim()
-    
+
     @staticmethod
     def get_available_vector_databases(validated_db: str) -> bool:
         """ Check and display available vector databases 
         'faiss' , 'chroma' ,'qdrant'
         """
-        print(f"🔍 Checking availability of vector databases...")
+        logger.info(f"🔍 Checking availability of vector databases...")
         # Show available databases
         available_dbs = VectorDBFactory.get_available_databases()
-        print("🗃️  Available Vector Databases:")
+        logger.info("🗃️  Available Vector Databases:")
         for db_name, info in available_dbs.items():
             status = "✅" if info['available'] else "❌"
             gpu = "🚀" if info['gpu_support'] else "💻"
-            print(f"   {status} {gpu} {db_name}: {info['description']}")
+            logger.info(f"   {status} {gpu} {db_name}: {info['description']}")
 
         if not available_dbs[validated_db]['available']:
-            print(f"❌ {validated_db} is not available!")
-            print(f"💡 {available_dbs[validated_db]['description']}")
+            logger.info(f"❌ {validated_db} is not available!")
+            logger.info(f"💡 {available_dbs[validated_db]['description']}")
             return False
         else:
-            print(f"✅ {validated_db} is available")
+            logger.info(f"✅ {validated_db} is available")
             return True

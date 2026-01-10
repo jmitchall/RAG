@@ -2,13 +2,12 @@ import numpy as np
 import os
 import pickle
 import torch
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from typing import List, Optional
-
 from vectordatabases.vector_db_interface import VectorDBInterface
-
+from refection_logger import logger
 try:
     import chromadb
     from chromadb.config import Settings
@@ -21,7 +20,7 @@ except ImportError:
 class ChromaVectorDB(VectorDBInterface):
     """ChromaDB implementation of vector database with GPU optimizations"""
 
-    def __init__(self, embedding_dim: int =0, persist_path: Optional[str] = None,
+    def __init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None,
                  collection_name: str = None, use_gpu: bool = True, **kwargs):
         if not CHROMA_AVAILABLE:
             raise ImportError("ChromaDB not available. Install with: uv add chromadb")
@@ -40,9 +39,9 @@ class ChromaVectorDB(VectorDBInterface):
         # Load existing data if available
         if not self.load():
             optimization_type = "GPU-optimized" if self.gpu_available else "CPU-optimized"
-            print(f"✅ Created new {optimization_type} ChromaDB collection: {collection_name}")
-        collection_names= self.get_list_of_collections()
-        print(f"📂 Available ChromaDB collections: {collection_names}" )
+            logger.info(f"✅ Created new {optimization_type} ChromaDB collection: {collection_name}")
+        collection_names = self.get_list_of_collections()
+        logger.info(f"📂 Available ChromaDB collections: {collection_names}")
 
     def get_list_of_collections(self) -> List[str]:
         """Get list of collections in ChromaDB"""
@@ -66,7 +65,7 @@ class ChromaVectorDB(VectorDBInterface):
             name=collection_name,
             metadata=collection_metadata
         )
-    
+
     def get_max_document_length(self) -> int:
         if self.collection.count() == 0:
             return 0
@@ -75,21 +74,21 @@ class ChromaVectorDB(VectorDBInterface):
             max_length = max(len(doc) for doc in results['documents'])
             return max_length
         except Exception as e:
-            print(f"⚠️  Could not determine max document length: {e}")
+            logger.info(f"⚠️  Could not determine max document length: {e}")
             return 0
 
     def check_gpu_availability(self):
         # Check GPU availability
         self.gpu_available = torch.cuda.is_available() and self.use_gpu
         if self.gpu_available:
-            print(f"🚀 GPU detected: {torch.cuda.get_device_name(0)}")
-            print(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-            print(f"⚡ GPU acceleration enabled for preprocessing")
+            logger.info(f"🚀 GPU detected: {torch.cuda.get_device_name(0)}")
+            logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+            logger.info(f"⚡ GPU acceleration enabled for preprocessing")
         else:
             if self.use_gpu:
-                print(f"⚠️  GPU requested but not available, using CPU")
+                logger.info(f"⚠️  GPU requested but not available, using CPU")
             else:
-                print(f"💻 Using CPU (GPU disabled)")
+                logger.info(f"💻 Using CPU (GPU disabled)")
 
     def init_chroma_db_client(self, persist_path: Optional[str] = None):
         # Initialize ChromaDB client with optimized settings
@@ -107,7 +106,7 @@ class ChromaVectorDB(VectorDBInterface):
             )
 
             self.client = chromadb.PersistentClient(path=chroma_path, settings=settings)
-            print(f"💾 Using persistent ChromaDB at {chroma_path}")
+            logger.info(f"💾 Using persistent ChromaDB at {chroma_path}")
         else:
             # Use in-memory storage with optimized settings
             settings = Settings(
@@ -117,7 +116,7 @@ class ChromaVectorDB(VectorDBInterface):
             )
 
             self.client = chromadb.Client(settings=settings)
-            print(f"💻 Using in-memory ChromaDB")
+            logger.info(f"💻 Using in-memory ChromaDB")
 
     def add_documents(self, docs: List[Document], embeddings: List[np.ndarray]) -> None:
         if len(docs) != len(embeddings):
@@ -127,7 +126,7 @@ class ChromaVectorDB(VectorDBInterface):
         processed_embeddings = embeddings
         if self.gpu_available and len(embeddings) > 100:
             try:
-                print(f"🚀 Using GPU for embedding preprocessing...")
+                logger.info(f"🚀 Using GPU for embedding preprocessing...")
 
                 # Convert to GPU tensors for batch processing
                 gpu_embeddings = torch.tensor(np.array(embeddings), device='cuda')
@@ -138,10 +137,10 @@ class ChromaVectorDB(VectorDBInterface):
                 # Convert back to CPU numpy arrays
                 processed_embeddings = gpu_embeddings.cpu().numpy()
 
-                print(f"✅ Preprocessed {len(embeddings)} embeddings on GPU")
+                logger.info(f"✅ Preprocessed {len(embeddings)} embeddings on GPU")
 
             except Exception as e:
-                print(f"⚠️  GPU preprocessing failed: {e}")
+                logger.info(f"⚠️  GPU preprocessing failed: {e}")
                 processed_embeddings = embeddings
 
         start_idx = len(self.documents)
@@ -150,7 +149,7 @@ class ChromaVectorDB(VectorDBInterface):
         batch_size = 1000 if self.gpu_available else 500
         total_docs = len(docs)
 
-        print(f"📄 Adding {total_docs} documents to VectorDB in batches of {batch_size}...")
+        logger.info(f"📄 Adding {total_docs} documents to VectorDB in batches of {batch_size}...")
 
         for batch_start in range(0, total_docs, batch_size):
             batch_end = min(batch_start + batch_size, total_docs)
@@ -167,17 +166,17 @@ class ChromaVectorDB(VectorDBInterface):
                     ids=batch_ids
                 )
             except Exception as e:
-                print(f"   ❌ Failed to add batch {batch_start + 1}-{batch_end}: {e}")
+                logger.info(f"   ❌ Failed to add batch {batch_start + 1}-{batch_end}: {e}")
                 raise
 
         self.documents.extend(docs)
         hardware_type = "GPU-accelerated" if self.gpu_available else "CPU"
-        print(f"📄 Added {len(docs)} documents to ChromaDB vector database ({hardware_type})")
-        print(f"📊 Total documents: {len(self.documents)}")
+        logger.info(f"📄 Added {len(docs)} documents to ChromaDB vector database ({hardware_type})")
+        logger.info(f"📊 Total documents: {len(self.documents)}")
 
     def search(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Document]:
         if len(self.documents) == 0:
-            print("⚠️  No documents in vector database to search")
+            logger.info("⚠️  No documents in vector database to search")
             return []
 
         if query_embedding.shape[0] != self.embedding_dim:
@@ -194,7 +193,7 @@ class ChromaVectorDB(VectorDBInterface):
                 processed_query = gpu_query.squeeze(0).cpu().numpy()
 
             except Exception as e:
-                print(f"⚠️  GPU query preprocessing failed: {e}")
+                logger.info(f"⚠️  GPU query preprocessing failed: {e}")
                 processed_query = query_embedding
 
         try:
@@ -223,33 +222,33 @@ class ChromaVectorDB(VectorDBInterface):
 
             if documents:
                 search_type = "GPU-accelerated" if self.gpu_available else "CPU"
-                print(f"🔍 Found {len(documents)} similar documents ({search_type} search)")
+                logger.info(f"🔍 Found {len(documents)} similar documents ({search_type} search)")
 
             return documents
 
         except Exception as e:
-            print(f"❌ ChromaDB search failed: {e}")
+            logger.info(f"❌ ChromaDB search failed: {e}")
             return []
 
     def save(self) -> None:
         """Save ChromaDB collection metadata and configuration"""
         # ChromaDB PersistentClient automatically saves the collection data
         # We just need to save our metadata and configuration
-        
+
         if not self.persist_path:
-            print("ℹ️  No persist_path set. ChromaDB data is only in memory or auto-persisted.")
+            logger.info("ℹ️  No persist_path set. ChromaDB data is only in memory or auto-persisted.")
             return
-    
+
         # Ensure directory exists
         os.makedirs(os.path.dirname(self.persist_path) if os.path.dirname(self.persist_path) else '.', exist_ok=True)
-        
+
         docs_file = f"{self.persist_path}.chroma.docs.pkl"
         config_file = f"{self.persist_path}.chroma.config.pkl"
-    
+
         # Save document metadata
         with open(docs_file, 'wb') as f:
             pickle.dump(self.documents, f)
-    
+
         # Save comprehensive configuration including collection info
         config_info = {
             'gpu_available': self.gpu_available,
@@ -260,23 +259,23 @@ class ChromaVectorDB(VectorDBInterface):
             'persist_path': self.persist_path,
             'collection_metadata': self.collection.metadata if hasattr(self.collection, 'metadata') else {}
         }
-    
+
         with open(config_file, 'wb') as f:
             pickle.dump(config_info, f)
-    
+
         # Get collection count for verification
         try:
             count = self.collection.count()
-            print(f"💾 ChromaDB saved:")
-            print(f"   📄 {len(self.documents)} document metadata → {docs_file}")
-            print(f"   ⚙️  Configuration → {config_file}")
-            print(f"   📊 Collection '{self.collection_name}' has {count} vectors")
+            logger.info(f"💾 ChromaDB saved:")
+            logger.info(f"   📄 {len(self.documents)} document metadata → {docs_file}")
+            logger.info(f"   ⚙️  Configuration → {config_file}")
+            logger.info(f"   📊 Collection '{self.collection_name}' has {count} vectors")
             if self.persist_path:
                 chroma_path = f"{self.persist_path}_chroma"
-                print(f"   💾 Collection data → {chroma_path}")
+                logger.info(f"   💾 Collection data → {chroma_path}")
         except Exception as e:
-            print(f"⚠️  Could not verify collection count: {e}")
-    
+            logger.info(f"⚠️  Could not verify collection count: {e}")
+
     def load(self) -> bool:
         """Load documents and configuration from persisted files"""
         if not self.persist_path:
@@ -284,48 +283,48 @@ class ChromaVectorDB(VectorDBInterface):
             try:
                 count = self.collection.count()
                 if count > 0:
-                    print(f"📂 In-memory collection has {count} documents")
+                    logger.info(f"📂 In-memory collection has {count} documents")
                     return self._reconstruct_documents_from_collection()
                 return False
             except:
                 return False
-    
+
         docs_file = f"{self.persist_path}.chroma.docs.pkl"
         config_file = f"{self.persist_path}.chroma.config.pkl"
         chroma_path = f"{self.persist_path}_chroma"
-    
+
         # Check if any persisted data exists
         has_config = os.path.exists(config_file)
         has_docs = os.path.exists(docs_file)
         has_chroma = os.path.exists(chroma_path)
-    
+
         if not has_config and not has_chroma:
-            print(f"ℹ️  No existing ChromaDB data found at {self.persist_path}")
+            logger.info(f"ℹ️  No existing ChromaDB data found at {self.persist_path}")
             return False
-    
+
         try:
             # Load configuration first
             saved_collection_name = self.collection_name
             if has_config:
                 with open(config_file, 'rb') as f:
                     config_info = pickle.load(f)
-                    
+
                 saved_gpu = config_info.get('gpu_available', False)
                 self.embedding_dim = config_info.get('embedding_dim', self.embedding_dim)
                 saved_collection_name = config_info.get('collection_name', self.collection_name)
                 saved_metadata = config_info.get('collection_metadata', {})
-                
+
                 # Check for hardware changes
                 if saved_gpu != self.gpu_available:
                     gpu_status = "GPU → CPU" if saved_gpu and not self.gpu_available else "CPU → GPU"
-                    print(f"ℹ️  Hardware change detected: {gpu_status}")
-                
-                print(f"📋 Loaded configuration from {config_file}")
-    
+                    logger.info(f"ℹ️  Hardware change detected: {gpu_status}")
+
+                logger.info(f"📋 Loaded configuration from {config_file}")
+
             # Reconnect to persisted ChromaDB if path exists
             if has_chroma:
-                print(f"🔄 Connecting to persisted ChromaDB at {chroma_path}...")
-                
+                logger.info(f"🔄 Connecting to persisted ChromaDB at {chroma_path}...")
+
                 # Create new client connected to persisted data
                 settings = Settings(
                     allow_reset=True,
@@ -333,61 +332,61 @@ class ChromaVectorDB(VectorDBInterface):
                     chroma_server_thread_pool_size=8 if self.gpu_available else 4,
                     chroma_server_grpc_port=None,
                 )
-                
+
                 self.client = chromadb.PersistentClient(path=chroma_path, settings=settings)
-                
+
                 # Get the existing collection
                 try:
                     self.collection = self.client.get_collection(name=saved_collection_name)
                     count = self.collection.count()
-                    print(f"📂 Connected to collection '{self.collection.name}' with {count} vectors")
-                    
+                    logger.info(f"📂 Connected to collection '{self.collection.name}' with {count} vectors")
+
                     # Verify collection metadata
                     if hasattr(self.collection, 'metadata') and self.collection.metadata:
-                        print(f"   HNSW space: {self.collection.metadata.get('hnsw:space', 'N/A')}")
-                        print(f"   HNSW M: {self.collection.metadata.get('hnsw:M', 'N/A')}")
-                        print(f"   GPU optimized: {self.collection.metadata.get('gpu_optimized', 'N/A')}")
-                    
+                        logger.info(f"   HNSW space: {self.collection.metadata.get('hnsw:space', 'N/A')}")
+                        logger.info(f"   HNSW M: {self.collection.metadata.get('hnsw:M', 'N/A')}")
+                        logger.info(f"   GPU optimized: {self.collection.metadata.get('gpu_optimized', 'N/A')}")
+
                 except Exception as e:
-                    print(f"❌ Collection '{saved_collection_name}' not found in persisted database: {e}")
+                    logger.info(f"❌ Collection '{saved_collection_name}' not found in persisted database: {e}")
                     # Try to recreate collection
-                    print(f"🔄 Recreating collection...")
+                    logger.info(f"🔄 Recreating collection...")
                     self._setup_collection()
-    
+
             # Load document metadata
             if has_docs:
                 with open(docs_file, 'rb') as f:
                     self.documents = pickle.load(f)
-                print(f"💾 Loaded {len(self.documents)} document metadata from {docs_file}")
+                logger.info(f"💾 Loaded {len(self.documents)} document metadata from {docs_file}")
             else:
                 # Reconstruct from collection if metadata file missing
-                print(f"ℹ️  No metadata file, reconstructing from collection...")
+                logger.info(f"ℹ️  No metadata file, reconstructing from collection...")
                 if not self._reconstruct_documents_from_collection():
-                    print(f"⚠️  Could not reconstruct documents from collection")
+                    logger.info(f"⚠️  Could not reconstruct documents from collection")
                     self.documents = []
-    
+
             # Verify integrity
             try:
                 count = self.collection.count()
                 if count != len(self.documents):
-                    print(f"⚠️  Mismatch: Collection has {count} vectors, metadata has {len(self.documents)} documents")
+                    logger.info(f"⚠️  Mismatch: Collection has {count} vectors, metadata has {len(self.documents)} documents")
                     if count > len(self.documents):
-                        print(f"🔄 Reconstructing full document list from collection...")
+                        logger.info(f"🔄 Reconstructing full document list from collection...")
                         self._reconstruct_documents_from_collection()
             except Exception as e:
-                print(f"⚠️  Could not verify collection count: {e}")
-    
+                logger.info(f"⚠️  Could not verify collection count: {e}")
+
             hardware_type = "GPU-enabled" if self.gpu_available else "CPU"
-            print(f"✅ ChromaDB loaded successfully ({hardware_type})")
-            print(f"   📊 {len(self.documents)} documents ready")
+            logger.info(f"✅ ChromaDB loaded successfully ({hardware_type})")
+            logger.info(f"   📊 {len(self.documents)} documents ready")
             return True
-    
+
         except Exception as e:
-            print(f"❌ Failed to load ChromaDB: {str(e)}")
+            logger.info(f"❌ Failed to load ChromaDB: {str(e)}")
             import traceback
-            traceback.print_exc()
+            traceback.logger.info_exc()
             return False
-        
+
     def _reconstruct_documents_from_collection(self) -> bool:
         """Attempt to reconstruct documents list from ChromaDB collection"""
         try:
@@ -402,11 +401,11 @@ class ChromaVectorDB(VectorDBInterface):
                 )
                 self.documents.append(doc)
 
-            print(f"🔄 Reconstructed {len(self.documents)} documents from collection")
+            logger.info(f"🔄 Reconstructed {len(self.documents)} documents from collection")
             return True
 
         except Exception as e:
-            print(f"⚠️  Could not reconstruct documents: {e}")
+            logger.info(f"⚠️  Could not reconstruct documents: {e}")
             return False
 
     def get_total_documents(self) -> int:
@@ -455,16 +454,16 @@ class ChromaVectorDB(VectorDBInterface):
                 M = 16
 
             # Update collection metadata (Note: ChromaDB may not support runtime updates)
-            print(f"⚙️  Optimal settings for {count} documents:")
-            print(f"   M: {M}, ef_construction: {ef_construction}")
-            print(f"   GPU optimized: {self.gpu_available}")
+            logger.info(f"⚙️  Optimal settings for {count} documents:")
+            logger.info(f"   M: {M}, ef_construction: {ef_construction}")
+            logger.info(f"   GPU optimized: {self.gpu_available}")
 
         except Exception as e:
-            print(f"⚠️  Could not optimize collection: {e}")
+            logger.info(f"⚠️  Could not optimize collection: {e}")
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
-    
+
     def delete_collection(self, **kwargs) -> bool:
         """ 
         Delete Table or collection supported by the 
@@ -474,14 +473,13 @@ class ChromaVectorDB(VectorDBInterface):
         collection_name: str = kwargs.get('collection_name', self.collection_name)
         try:
             self.client.delete_collection(name=collection_name)
-            print(f"🗑️  Deleted ChromaDB collection: {collection_name}")
+            logger.info(f"🗑️  Deleted ChromaDB collection: {collection_name}")
             self.documents = []
             return True
         except Exception as e:
-            print(f"❌ Failed to delete collection: {e}")
+            logger.info(f"❌ Failed to delete collection: {e}")
             return False
-        
-        
+
     def as_langchain_retriever(self, embedding_function, top_k: int = 5):
         """Convert to LangChain retriever
 
@@ -520,10 +518,10 @@ class ChromaChainRetriever(BaseRetriever):
         arbitrary_types_allowed = True
 
     def _get_relevant_documents(
-        self,
-        query: str,
-        *,
-        run_manager: Optional[CallbackManagerForRetrieverRun] = None
+            self,
+            query: str,
+            *,
+            run_manager: Optional[CallbackManagerForRetrieverRun] = None
     ) -> List[Document]:
         """Retrieve documents relevant to the query
            1. When LangChain sees retriever in the context
@@ -538,10 +536,11 @@ class ChromaChainRetriever(BaseRetriever):
             List of relevant documents with similarity scores
         """
         chunk_size = self.vector_db.get_max_document_length()
-        print(f"Max document length in vector DB: {chunk_size} characters")
+        logger.info(f"Max document length in vector DB: {chunk_size} characters")
         query_text_input = query
         if len(query_text_input) > chunk_size:
-            print(f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
+            logger.info(
+                f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
             query_text_input = query_text_input[:chunk_size]
 
         # Generate embedding for the query
@@ -553,10 +552,10 @@ class ChromaChainRetriever(BaseRetriever):
 
         # Search the vector database
         results = self.vector_db.search(query_embedding, top_k=self.top_k)
-        
-        print(f"\n🔍 Retrieved {len(results)} documents for query '{query_text_input}'")
+
+        logger.info(f"\n🔍 Retrieved {len(results)} documents for query '{query_text_input}'")
         return results
-    
+
     def format_list_documents_as_string(self, **kwargs) -> str:
         """Format a list of Documents into a human-readable string with metadata.
         
@@ -570,12 +569,12 @@ class ChromaChainRetriever(BaseRetriever):
         results = kwargs.get('results', [])
         if not results:
             return ''
-        context =""
+        context = ""
         for i, doc in enumerate(results, 1):
-            print(self.dict_to_str(doc.metadata))
+            logger.info(self.dict_to_str(doc.metadata))
             context += doc.page_content + "\n\n"
         return context
-    
+
     def dict_to_str(self, d: dict) -> str:
         """Convert a dictionary to a formatted string.
         
@@ -587,9 +586,7 @@ class ChromaChainRetriever(BaseRetriever):
         """
         if not d:
             return ''
-        context =""
+        context = ""
         for key, value in d.items():
             context += f"{key}: {value}\n"
         return context
-
-

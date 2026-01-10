@@ -1,70 +1,72 @@
 # Import the main libraries we need from vLLM
+import json
+
+import re
+from inference.vllm_srv.cleaner import check_gpu_memory_status, force_gpu_memory_cleanup
+from inference.vllm_srv.cleaner import cleanup_vllm_engine
 from langchain_community.llms import VLLM
-from langchain_core.prompt_values import StringPromptValue, ChatPromptValue
+from langchain_core.language_models.base import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.prompt_values import StringPromptValue, ChatPromptValue
+from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from langchain_core.runnables import Runnable
-from langchain_core.language_models.base import LanguageModelInput
-from typing import Any, Dict, List, Optional, Sequence, Union, Callable
 from pydantic import Field
-import json
-import re
-import logging
-from inference.vllm_srv.cleaner import check_gpu_memory_status ,force_gpu_memory_cleanup
-from inference.vllm_srv.cleaner import cleanup_vllm_engine
-logger = logging.getLogger(__name__)
+from typing import Any, Dict, List, Optional, Sequence, Union, Callable
+from refection_logger import logger
 
-def messages_to_mistral_prompt( messages: Sequence[BaseMessage]) -> str:
-        """Convert LangChain messages to Mistral prompt format."""
-        
-        # Separate system messages from conversation
-        system_parts = []
-        conversation_parts = []
-        
-        for message in messages:
-            match message:
-                case SystemMessage():
-                    system_parts.append(message.content)
-                    
-                case HumanMessage():
-                    conversation_parts.append(f"Human: {message.content}")
-                    
-                case AIMessage() if message.tool_calls:
-                    # Format AI message with tool calls
-                    tool_calls_text = format_tool_calls_for_prompt(message.tool_calls)
-                    conversation_parts.append(f"Assistant: {message.content}\n{tool_calls_text}")
-                    
-                case AIMessage():
-                    conversation_parts.append(f"Assistant: {message.content}")
-                    
-                case ToolMessage():
-                    # Format tool results
-                    conversation_parts.append(f"Tool Result ({message.name}): {message.content}")
-                    
-                case _:
-                    # Handle any unexpected message types gracefully
-                    logger.warning(f"Unknown message type: {type(message)}")
-                    conversation_parts.append(f"Unknown: {message.content}")
-        
-        # Combine system and conversation
-        system_text = " ".join(system_parts) if system_parts else ""
-        conversation_text = "\n".join(conversation_parts)
-        
-        # Create Mistral instruction format
-        match (bool(system_text), bool(conversation_text)):
-            case (True, True):
-                combined_content = f"{system_text}\n\n{conversation_text}"
-            case (True, False):
-                combined_content = system_text
+
+def messages_to_mistral_prompt(messages: Sequence[BaseMessage]) -> str:
+    """Convert LangChain messages to Mistral prompt format."""
+
+    # Separate system messages from conversation
+    system_parts = []
+    conversation_parts = []
+
+    for message in messages:
+        match message:
+            case SystemMessage():
+                system_parts.append(message.content)
+
+            case HumanMessage():
+                conversation_parts.append(f"Human: {message.content}")
+
+            case AIMessage() if message.tool_calls:
+                # Format AI message with tool calls
+                tool_calls_text = format_tool_calls_for_prompt(message.tool_calls)
+                conversation_parts.append(f"Assistant: {message.content}\n{tool_calls_text}")
+
+            case AIMessage():
+                conversation_parts.append(f"Assistant: {message.content}")
+
+            case ToolMessage():
+                # Format tool results
+                conversation_parts.append(f"Tool Result ({message.name}): {message.content}")
+
             case _:
-                combined_content = conversation_text
-            
-        return f"<s>[INST] {combined_content} [/INST]"
+                # Handle any unexpected message types gracefully
+                logger.warning(f"Unknown message type: {type(message)}")
+                conversation_parts.append(f"Unknown: {message.content}")
 
-def format_tool_calls_for_prompt( tool_calls: List[Dict[str, Any]]) -> str:
+    # Combine system and conversation
+    system_text = " ".join(system_parts) if system_parts else ""
+    conversation_text = "\n".join(conversation_parts)
+
+    # Create Mistral instruction format
+    match (bool(system_text), bool(conversation_text)):
+        case (True, True):
+            combined_content = f"{system_text}\n\n{conversation_text}"
+        case (True, False):
+            combined_content = system_text
+        case _:
+            combined_content = conversation_text
+
+    return f"<s>[INST] {combined_content} [/INST]"
+
+
+def format_tool_calls_for_prompt(tool_calls: List[Dict[str, Any]]) -> str:
     """Format tool calls for inclusion in prompt."""
     formatted_calls = []
     for call in tool_calls:
@@ -74,15 +76,15 @@ def format_tool_calls_for_prompt( tool_calls: List[Dict[str, Any]]) -> str:
 
 def parse_tool_calls(response_text: str) -> tuple[List[Dict[str, Any]], str]:
     """Parse tool calls from model response."""
-    
+
     tool_calls = []
     clean_content = response_text
-    
+
     # Find all TOOL_CALL: occurrences
     tool_call_starts = []
     for match in re.finditer(r'TOOL_CALL:\s*', response_text):
         tool_call_starts.append(match.end())
-    
+
     for start_pos in tool_call_starts:
         try:
             # Find the complete JSON object starting at this position
@@ -91,10 +93,10 @@ def parse_tool_calls(response_text: str) -> tuple[List[Dict[str, Any]], str]:
                 # Remove the tool call from clean content (including TOOL_CALL: prefix)
                 tool_call_pattern = r'TOOL_CALL:\s*' + re.escape(json_str)
                 clean_content = re.sub(tool_call_pattern, '', clean_content).strip()
-                
+
                 # Parse the JSON
                 tool_call_json = json.loads(json_str)
-                
+
                 # Create tool call in LangChain format
                 tool_call = {
                     "name": tool_call_json.get("name"),
@@ -102,53 +104,55 @@ def parse_tool_calls(response_text: str) -> tuple[List[Dict[str, Any]], str]:
                     "id": f"call_{len(tool_calls)}",  # Simple ID generation
                     "type": "tool_call"
                 }
-                
+
                 tool_calls.append(tool_call)
-                
+
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse tool call JSON - {e}")
             continue
         except Exception as e:
             logger.warning(f"Error processing tool call - {e}")
             continue
-    
+
     return tool_calls, clean_content
+
 
 def extract_complete_json(text: str, start_pos: int) -> Optional[str]:
     """Extract a complete JSON object starting at the given position."""
     if start_pos >= len(text) or text[start_pos] != '{':
         return None
-    
+
     brace_count = 0
     in_string = False
     escape_next = False
-    
+
     for i in range(start_pos, len(text)):
         char = text[i]
-        
+
         if escape_next:
             escape_next = False
             continue
-            
+
         if char == '\\' and in_string:
             escape_next = True
             continue
-            
+
         if char == '"' and not escape_next:
             in_string = not in_string
             continue
-            
+
         if not in_string:
             if char == '{':
                 brace_count += 1
             elif char == '}':
                 brace_count -= 1
                 if brace_count == 0:
-                    return text[start_pos:i+1]
-    
+                    return text[start_pos:i + 1]
+
     return None
 
-def convert_chat_prompt_to_minstral_prompt_value(chat_prompt_value : ChatPromptValue):
+
+def convert_chat_prompt_to_minstral_prompt_value(chat_prompt_value: ChatPromptValue):
     """
     Convert ChatPromptValue to a plain string by concatenating message contents.
     This removes role labels like "System:" and "Human:" for BaseLLM compatibility.
@@ -170,30 +174,31 @@ def convert_chat_prompt_to_minstral_prompt_value(chat_prompt_value : ChatPromptV
     # Create and return a StringPromptValue
     return StringPromptValue(text=prompt)
 
-def add_tool_instructions_to_prompt( prompt: str , tools: List[Dict[str, Any]]) -> str:
-        """Add tool calling instructions to the prompt."""
-        
-        # Create tool descriptions
-        tool_descriptions = []
-        for tool in tools:
-            tool_info = tool.get('function', {})
-            name = tool_info.get('name', 'unknown')
-            description = tool_info.get('description', 'No description')
-            parameters = tool_info.get('parameters', {})
-            
-            tool_desc = f"- {name}: {description}"
-            if parameters.get('properties'):
-                props = parameters['properties']
-                params_desc = ", ".join([f"{k} ({v.get('type', 'any')}): {v.get('description', '')}" 
-                                       for k, v in props.items()])
-                tool_desc += f"\n  Parameters: {params_desc}"
-            
-            tool_descriptions.append(tool_desc)
-        
-        tools_text = "\n".join(tool_descriptions)
-        
-        # Add tool instructions before [/INST]
-        tool_instructions = f"""
+
+def add_tool_instructions_to_prompt(prompt: str, tools: List[Dict[str, Any]]) -> str:
+    """Add tool calling instructions to the prompt."""
+
+    # Create tool descriptions
+    tool_descriptions = []
+    for tool in tools:
+        tool_info = tool.get('function', {})
+        name = tool_info.get('name', 'unknown')
+        description = tool_info.get('description', 'No description')
+        parameters = tool_info.get('parameters', {})
+
+        tool_desc = f"- {name}: {description}"
+        if parameters.get('properties'):
+            props = parameters['properties']
+            params_desc = ", ".join([f"{k} ({v.get('type', 'any')}): {v.get('description', '')}"
+                                     for k, v in props.items()])
+            tool_desc += f"\n  Parameters: {params_desc}"
+
+        tool_descriptions.append(tool_desc)
+
+    tools_text = "\n".join(tool_descriptions)
+
+    # Add tool instructions before [/INST]
+    tool_instructions = f"""
 
 AVAILABLE TOOLS:
 {tools_text}
@@ -205,9 +210,9 @@ INSTRUCTIONS:
 - If no tools are needed, respond normally without TOOL_CALL
 
 """
-        
-        # Insert instructions before [/INST]
-        return prompt.replace(' [/INST]', tool_instructions + ' [/INST]')
+
+    # Insert instructions before [/INST]
+    return prompt.replace(' [/INST]', tool_instructions + ' [/INST]')
 
 
 class VLLMChatModel(BaseChatModel):
@@ -217,14 +222,15 @@ class VLLMChatModel(BaseChatModel):
     This class bridges VLLM's text completion interface with LangChain's chat model
     interface, enabling structured tool calling functionality.
     """
-    
+
     # Core VLLM instance
     vllm_model: VLLM = Field(description="The underlying VLLM model instance")
-    
+
     # Tool calling configuration
     tools: List[Dict[str, Any]] = Field(default_factory=list, description="Bound tools for this model")
     tool_choice: Optional[str] = Field(default=None, description="Tool choice strategy")
-    
+    ignore_tools: bool = Field(default=False, description="Allow tool parsing and definition")
+
     # Pydantic Configuration Class
     # ============================
     # This Config class tells Pydantic (the data validation library that LangChain uses)
@@ -269,43 +275,53 @@ class VLLMChatModel(BaseChatModel):
         """Return type of chat model."""
         return "vllm_chat_wrapper"
 
-    @property 
+    @property
     def _identifying_params(self) -> Dict[str, Any]:
         """Get identifying parameters by looking up self.vllm_model """
         return {"model_name": getattr(self.vllm_model, 'model', 'unknown')}
 
+    def unbind_tools(self, pass_through):
+        """Remove tool binding from the model."""
+        self.ignore_tools = True
+        return pass_through
+
     def _generate(
-        self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[Any] = None,
-        **kwargs: Any,
+            self,
+            messages: List[BaseMessage],
+            stop: Optional[List[str]] = None,
+            run_manager: Optional[Any] = None,
+            **kwargs: Any,
     ) -> ChatResult:
         """Generate chat result from messages."""
-        
+
         # Convert messages to prompt string
         prompt = messages_to_mistral_prompt(messages)
-        
+
         # Add tool instructions if tools are bound
-        if self.tools:
+        if self.tools and not self.ignore_tools:
             prompt = add_tool_instructions_to_prompt(prompt, self.tools)
-        
+
         # Generate response using VLLM
         try:
+            logger.info(f"LLM PROMPT:\n{prompt} ")
             response_text = self.vllm_model.invoke(prompt, stop=stop, **kwargs)
-            
-            # Parse response for tool calls
-            tool_calls, clean_content = parse_tool_calls(response_text)
-            
+            logger.info(f"LLM RESPONSE to prompt:\n {response_text} ")
+            if self.ignore_tools:
+                tool_calls = []
+                clean_content = response_text
+            else:
+                # Parse response for tool calls
+                tool_calls, clean_content = parse_tool_calls(response_text)
+
             # Create AIMessage with tool calls
             ai_message = AIMessage(
                 content=clean_content,
                 tool_calls=tool_calls if tool_calls else []
             )
-            
+
             generation = ChatGeneration(message=ai_message)
             return ChatResult(generations=[generation])
-            
+
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             # Fallback response
@@ -314,14 +330,14 @@ class VLLMChatModel(BaseChatModel):
             return ChatResult(generations=[generation])
 
     def bind_tools(
-        self,
-        tools: Sequence[Union[Dict[str, Any], type, Callable, BaseTool]],
-        *,
-        tool_choice: Optional[str] = None,
-        **kwargs: Any,
+            self,
+            tools: Sequence[Union[Dict[str, Any], type, Callable, BaseTool]],
+            *,
+            tool_choice: Optional[str] = None,
+            **kwargs: Any,
     ) -> Runnable[LanguageModelInput, AIMessage]:
         """Bind tools to this chat model."""
-        
+
         # Convert tools to OpenAI format
         formatted_tools = []
         for tool in tools:
@@ -329,26 +345,26 @@ class VLLMChatModel(BaseChatModel):
                 formatted_tools.append(tool)
             else:
                 formatted_tools.append(convert_to_openai_tool(tool))
-        
+
         # MEMORY OPTIMIZATION: Reuse existing instance instead of creating new one
         # This prevents memory leaks from multiple VLLMChatModel instances
         logger.info(f"🔧 Binding {len(formatted_tools)} tools to existing VLLMChatModel instance")
         self.tools = formatted_tools
         self.tool_choice = tool_choice
-        
+        self.ignore_tools = False
         # Return self instead of creating new instance to prevent memory leaks
         return self
 
     def with_structured_output(
-        self,
-        schema: Union[Dict, type],
-        **kwargs: Any,
+            self,
+            schema: Union[Dict, type],
+            **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, Any]]:
         """Add structured output support (basic implementation)."""
         # This is a simplified implementation
         # You can extend this for more sophisticated structured output
-        raise NotImplementedError("Structured output not yet implemented for VLLMChatModel")  
-    
+        raise NotImplementedError("Structured output not yet implemented for VLLMChatModel")
+
     def cleanup_llm_memory(self):
         """
         Clean up LLM instance and free GPU memory.
@@ -358,16 +374,16 @@ class VLLMChatModel(BaseChatModel):
         """
         if hasattr(self, 'vllm_model') and self.vllm_model is not None:
             logger.info("🧹 Cleaning up LLM resources...")
-            
-            try:      
+
+            try:
                 # Clean up the LLM instance
                 cleanup_vllm_engine(self.vllm_model)
-                
+
                 # Remove reference
                 self.vllm_model = None
-                
+
                 logger.info("✅ LLM cleanup completed")
-                
+
             except Exception as e:
                 logger.warning(f"⚠️  LLM cleanup issue (non-critical): {e}")
 
@@ -379,76 +395,75 @@ class VLLMChatModel(BaseChatModel):
             pass  # Ignore errors in destructor 
 
 
+def get_langchain_vllm_mistral_quantized(download_dir=None, gpu_memory_utilization: float = 0.6,
+                                         max_model_len: int = 16384, top_k: int = 5,
+                                         max_tokens: int = 512, temperature: float = 0.7) -> VLLM:
+    model_name = "TheBloke/Mistral-7B-Instruct-v0.2-GPTQ"
+    logger.info(check_gpu_memory_status())
+    # Try full configuration first
+    try:
+        # Common VLLM kwargs for both branches
+        vllm_kwargs = {
+            "model": model_name,
+            "tensor_parallel_size": 1,
+            "gpu_memory_utilization": gpu_memory_utilization,
+            "max_model_len": max_model_len,
+            "trust_remote_code": True,
+            "max_new_tokens": max_tokens,
+            "temperature": temperature,
+            "top_k": top_k
+        }
 
-def get_langchain_vllm_mistral_quantized(download_dir=None , gpu_memory_utilization: float = 0.6,
-                                         max_model_len: int = 16384,  top_k: int = 5,
-                     max_tokens: int = 512, temperature: float = 0.7) -> VLLM:
-        model_name="TheBloke/Mistral-7B-Instruct-v0.2-GPTQ"
-        print(check_gpu_memory_status())
-        # Try full configuration first
+        # Add download_dir if provided
+        if download_dir is not None:
+            vllm_kwargs["download_dir"] = download_dir
+        logger.info(vllm_kwargs)
+        return_vllm = VLLM(**vllm_kwargs)
+        return return_vllm
+
+    except Exception as e:
+        logger.warning(f"Failed to create VLLM with full configuration: {e}")
+        logger.info("Trying simplified VLLM configuration...")
+        logger.info(check_gpu_memory_status())
+        # Fallback to simpler configuration
         try:
-            # Common VLLM kwargs for both branches
-            vllm_kwargs = {
+            simple_kwargs = {
                 "model": model_name,
                 "tensor_parallel_size": 1,
-                "gpu_memory_utilization": gpu_memory_utilization,
-                "max_model_len": max_model_len,
+                "gpu_memory_utilization": 0.5,  # Very conservative memory usage
                 "trust_remote_code": True,
                 "max_new_tokens": max_tokens,
                 "temperature": temperature,
                 "top_k": top_k
             }
-            
+
             # Add download_dir if provided
             if download_dir is not None:
-                vllm_kwargs["download_dir"] = download_dir
-            print(vllm_kwargs)
-            return_vllm =   VLLM(**vllm_kwargs)
+                simple_kwargs["download_dir"] = download_dir
+
+            return_vllm = VLLM(**simple_kwargs)
             return return_vllm
-            
-        except Exception as e:
-            logger.warning(f"Failed to create VLLM with full configuration: {e}")
-            logger.info("Trying simplified VLLM configuration...")
-            print(check_gpu_memory_status())
-            # Fallback to simpler configuration
-            try:
-                simple_kwargs = {
-                    "model": model_name,
-                    "tensor_parallel_size": 1,
-                    "gpu_memory_utilization": 0.5,  # Very conservative memory usage
-                    "trust_remote_code": True,
-                    "max_new_tokens": max_tokens,
-                    "temperature": temperature,
-                    "top_k": top_k
-                }
-                
-                # Add download_dir if provided
-                if download_dir is not None:
-                    simple_kwargs["download_dir"] = download_dir
-                    
-                return_vllm = VLLM(**simple_kwargs)
-                return return_vllm
-                
-            except Exception as e2:
-                print(check_gpu_memory_status())
-                logger.error(f"Failed to create VLLM with simplified configuration: {e2}")
-                # Try minimal configuration as last resort
-                minimal_kwargs = {
-                    "model": model_name,
-                    "trust_remote_code": True,
-                    "max_new_tokens": max_tokens,
-                    "temperature": temperature
-                }
-                
-                if download_dir is not None:
-                    minimal_kwargs["download_dir"] = download_dir
-                    
-                return VLLM(**minimal_kwargs)
-        
+
+        except Exception as e2:
+            logger.info(check_gpu_memory_status())
+            logger.error(f"Failed to create VLLM with simplified configuration: {e2}")
+            # Try minimal configuration as last resort
+            minimal_kwargs = {
+                "model": model_name,
+                "trust_remote_code": True,
+                "max_new_tokens": max_tokens,
+                "temperature": temperature
+            }
+
+            if download_dir is not None:
+                minimal_kwargs["download_dir"] = download_dir
+
+            return VLLM(**minimal_kwargs)
+
 
 def create_vllm_chat_model(download_dir=None, gpu_memory_utilization: float = 0.75,
-                          max_model_len: int = 16384, top_k: int = 5,
-                          max_tokens: int = 512, temperature: float = 0.7) -> VLLMChatModel:
+                           max_model_len: int = 16384, top_k: int = 5,
+                           max_tokens: int = 512, temperature: float = 0.7) -> VLLMChatModel:
     """
     Create a VLLM Chat Model with tool calling support.
     
@@ -463,7 +478,7 @@ def create_vllm_chat_model(download_dir=None, gpu_memory_utilization: float = 0.
     Returns:
         VLLMChatModel instance with tool calling support
     """
-    
+
     try:
         # Create underlying VLLM model
         vllm_model = get_langchain_vllm_mistral_quantized(
@@ -474,14 +489,14 @@ def create_vllm_chat_model(download_dir=None, gpu_memory_utilization: float = 0.
             max_tokens=max_tokens,
             temperature=temperature
         )
-        
+
         # Wrap in chat model
         return VLLMChatModel(vllm_model=vllm_model, callbacks=None)
-    
+
     except Exception as e:
         logger.error(f"Failed to create VLLM chat model: {e}")
         logger.info("Attempting fallback with reduced parameters...")
-        
+
         # Try with reduced memory utilization as fallback
         try:
             vllm_model = get_langchain_vllm_mistral_quantized(
@@ -492,10 +507,9 @@ def create_vllm_chat_model(download_dir=None, gpu_memory_utilization: float = 0.
                 max_tokens=max_tokens,
                 temperature=temperature
             )
-            
+
             return VLLMChatModel(vllm_model=vllm_model, callbacks=None)
-            
+
         except Exception as e2:
             logger.error(f"Fallback also failed: {e2}")
             raise RuntimeError(f"Unable to create VLLM chat model. Original error: {e}, Fallback error: {e2}")
-

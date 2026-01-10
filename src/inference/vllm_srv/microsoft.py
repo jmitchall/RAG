@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from refection_logger import logger
 """
 AI Language Model Demo Script
 ============================
@@ -10,7 +11,7 @@ What this script does:
 1. Loads an AI language model into your computer's memory
 2. Sends several questions/prompts to the AI
 3. Gets responses back from the AI
-4. Prints out both the questions and AI's answers
+4. logger.infos out both the questions and AI's answers
 
 Requirements:
 - A computer with a decent graphics card (GPU) 
@@ -56,8 +57,8 @@ def main():
     This function loads an AI model and asks it questions.
     """
 
-    print("🤖 Starting AI Language Model Demo...")
-    print("=" * 50)
+    logger.info("🤖 Starting AI Language Model Demo...")
+    logger.info("=" * 50)
 
     # =================================================================
     # STEP 1: Choose and load an AI model
@@ -77,15 +78,15 @@ def main():
         download_dir="./models/phi-3-mini-4k-instruct"  # Optional: specify local path to save/load model
     )
 
-    print(f"✅ AI model loaded successfully!")
-    print(f"📊 Model: {llm.llm_engine.model_config.model}")
+    logger.info(f"✅ AI model loaded successfully!")
+    logger.info(f"📊 Model: {llm.llm_engine.model_config.model}")
 
     # =================================================================
     # STEP 2: Ask the AI all our questions
     # =================================================================
 
-    print(f"\n🗣️  Asking {len(prompts)} questions to the AI...")
-    print("⏳ This might take a minute - the AI is thinking...")
+    logger.info(f"\n🗣️  Asking {len(prompts)} questions to the AI...")
+    logger.info("⏳ This might take a minute - the AI is thinking...")
 
     # This is where we actually send our questions to the AI
     # The AI processes ALL questions at once (called "batch processing")
@@ -95,8 +96,8 @@ def main():
     # STEP 3: Display the results in a nice format
     # =================================================================
 
-    print("\n🎯 AI Responses:")
-    print("=" * 80)
+    logger.info("\n🎯 AI Responses:")
+    logger.info("=" * 80)
 
     # Loop through each question-answer pair
     for i, output in enumerate(outputs, 1):  # enumerate gives us a counter starting from 1
@@ -108,13 +109,13 @@ def main():
         ai_response = output.outputs[0].text
 
         # Display everything in a nice format
-        print(f"\n📝 Question #{i}:")
-        print(f"❓ Human: {original_question}")
-        print(f"🤖 AI: {ai_response}")
-        print("-" * 80)  # Visual separator line
+        logger.info(f"\n📝 Question #{i}:")
+        logger.info(f"❓ Human: {original_question}")
+        logger.info(f"🤖 AI: {ai_response}")
+        logger.info("-" * 80)  # Visual separator line
 
-    print("\n✨ Demo completed! The AI has answered all your questions.")
-    print("💡 Try editing the 'prompts' list above to ask different questions!")
+    logger.info("\n✨ Demo completed! The AI has answered all your questions.")
+    logger.info("💡 Try editing the 'prompts' list above to ask different questions!")
 
 
 # =============================================================================

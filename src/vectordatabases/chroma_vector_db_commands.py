@@ -1,19 +1,21 @@
-from langchain_chroma import Chroma
 from langchain.schema import Document
-from typing import List, Optional
+from langchain_chroma import Chroma
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from llama_index.vector_stores.chroma import ChromaVectorStore
+from typing import List, Optional
+from refection_logger import logger
+
 # https://developers.llamaindex.ai/python/examples/vector_stores/chromaindexdemo/
 
 def get_chroma_retriever(
-    chroma_vectorstore_ptr: Chroma,
-    k=5,
-    score_threshold: float = None,
-    search_type: str = "mmr",
-    fetch_k: int = 20,
-    lambda_mult: float = 0.5
+        chroma_vectorstore_ptr: Chroma,
+        k=5,
+        score_threshold: float = None,
+        search_type: str = "mmr",
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5
 ) -> BaseRetriever:
     """
     Create a LangChain retriever from a Chroma vector store.
@@ -33,7 +35,8 @@ def get_chroma_retriever(
         lambda_mult (float): For MMR - balance between relevance (1.0) and diversity (0.0)
     Returns:
         BaseRetriever: A LangChain retriever object.
-    """ 
+    """
+
     # Create custom retriever wrapper that includes similarity scores
     class ChromaRetrieverWrapper(BaseRetriever):
         vectorstore: Chroma
@@ -42,24 +45,25 @@ def get_chroma_retriever(
         search_type: str = "similarity"
         fetch_k: int = 20
         lambda_mult: float = 0.5
-        
-        def get_relevant_documents(self, query: str, *, run_manager: Optional[CallbackManagerForRetrieverRun] = None) -> List[Document]:
+
+        def get_relevant_documents(self, query: str, *, run_manager: Optional[CallbackManagerForRetrieverRun] = None) -> \
+        List[Document]:
             documents = []
-            
+
             if self.search_type == "mmr":
                 # Use MMR for diverse, relevant results
-                print(f"   🔍 Using MMR search (fetch_k={self.fetch_k}, lambda={self.lambda_mult})")
+                logger.info(f"   🔍 Using MMR search (fetch_k={self.fetch_k}, lambda={self.lambda_mult})")
                 docs = self.vectorstore.max_marginal_relevance_search(
                     query,
                     k=self.top_k,
                     fetch_k=self.fetch_k,
                     lambda_mult=self.lambda_mult
                 )
-                
+
                 # Compute similarity scores for MMR results to show relevance
                 # Get the query embedding
                 query_embedding = self.vectorstore._embedding_function.embed_query(query)
-                
+
                 for idx, doc in enumerate(docs):
                     doc.metadata['search_type'] = 'mmr'
                     doc.metadata['similarity_score'] = None  # MMR doesn't provide scores
@@ -67,14 +71,14 @@ def get_chroma_retriever(
                     source = doc.metadata.get('source', 'unknown')
                     cosine_similarity = doc.metadata.get('cosine_similarity', None)
                     if cosine_similarity is not None:
-                        print(f"   📄 MMR result | Source: {source} | Cosine Similarity: {cosine_similarity:.4f}")
+                        logger.info(f"   📄 MMR result | Source: {source} | Cosine Similarity: {cosine_similarity:.4f}")
                     else:
-                        print(f"   📄 MMR result | Source: {source}")
+                        logger.info(f"   📄 MMR result | Source: {source}")
                     documents.append(doc)
             else:
                 # Use similarity_search_with_score to get raw distances without normalization warnings
                 search_results = self.vectorstore.similarity_search_with_score(query, k=self.top_k)
-                
+
                 for doc, distance in search_results:
                     # Chroma returns L2 distances (lower = more similar)
                     # Note: Score threshold filtering won't work well with raw distances
@@ -83,11 +87,11 @@ def get_chroma_retriever(
                     doc.metadata['similarity_score'] = -distance  # Negative distance (less negative = more similar)
                     doc.metadata['search_type'] = 'similarity'
                     source = doc.metadata.get('source', 'unknown')
-                    print(f"   📄 Distance: {distance:.4f} (lower=better) | Source: {source}")
+                    logger.info(f"   📄 Distance: {distance:.4f} (lower=better) | Source: {source}")
                     documents.append(doc)
-            
+
             return documents
-        
+
         def update_doc_metadata_cosine_score(self, doc: Document, query_embedding: List[float], idx: int):
             """
             Update document metadata with cosine similarity score to the query.
@@ -99,13 +103,13 @@ def get_chroma_retriever(
             from numpy import dot
             from numpy.linalg import norm
             import numpy as np
-            
+
             doc_embedding = self.vectorstore._embedding_function.embed_query(doc.page_content)
             # Compute cosine similarity
-            cosine_sim = dot(np.array(query_embedding), np.array(doc_embedding)) / (norm(np.array(query_embedding)) * norm(np.array(doc_embedding)) + 1e-10)
+            cosine_sim = dot(np.array(query_embedding), np.array(doc_embedding)) / (
+                        norm(np.array(query_embedding)) * norm(np.array(doc_embedding)) + 1e-10)
             doc.metadata['similarity_score'] = cosine_sim
             doc.metadata['result_index'] = idx + 1  # 1-based index for display
-
 
     return ChromaRetrieverWrapper(
         vectorstore=chroma_vectorstore_ptr,
@@ -116,7 +120,8 @@ def get_chroma_retriever(
         lambda_mult=lambda_mult
     )
 
-def create_chroma_vectore_store(collection_name: str,  vector_db_persisted_path: str)-> Chroma:
+
+def create_chroma_vectore_store(collection_name: str, vector_db_persisted_path: str) -> Chroma:
     """     
     Create a Chroma vector database.
     Simple Explanation:
@@ -135,10 +140,12 @@ def create_chroma_vectore_store(collection_name: str,  vector_db_persisted_path:
         persist_directory=vector_db_persisted_path,
         collection_name=collection_name,
     )
-    print(f"✅ Chroma vector store loaded from {vector_db_persisted_path}")
+    logger.info(f"✅ Chroma vector store loaded from {vector_db_persisted_path}")
     return chroma_vectorstore
-    
-def chroma_does_collection_exist( collection_name: str, vector_db_persisted_path: str , embeddings:Embeddings = None) -> bool:
+
+
+def chroma_does_collection_exist(collection_name: str, vector_db_persisted_path: str,
+                                 embeddings: Embeddings = None) -> bool:
     """
     Check if a specific collection exists in the Chroma database.
     Simple Explanation:
@@ -157,14 +164,14 @@ def chroma_does_collection_exist( collection_name: str, vector_db_persisted_path
         chroma_vectorstore = create_chroma_vectore_store(collection_name, vector_db_persisted_path, embeddings)
         # Attempt to access the collection to verify its existence
         _ = chroma_vectorstore.get()
-        return True , chroma_vectorstore  # Collection exists
+        return True, chroma_vectorstore  # Collection exists
     except Exception:
         return False, None  # Collection does not exist   
-    
+
 
 def chroma_create_from_documents(collection_name: str,
-    vector_db_persisted_path: str, documents: List[Document],
-    embeddings:Embeddings)-> Chroma:
+                                 vector_db_persisted_path: str, documents: List[Document],
+                                 embeddings: Embeddings) -> Chroma:
     """
     Create or load a Chroma vector database from documents.
     Simple Explanation:
@@ -180,10 +187,10 @@ def chroma_create_from_documents(collection_name: str,
     Returns:
         Chroma: A Chroma vector store object.
     """
-    exists, chroma_vectorstore = chroma_does_collection_exist(collection_name, vector_db_persisted_path , embeddings)
+    exists, chroma_vectorstore = chroma_does_collection_exist(collection_name, vector_db_persisted_path, embeddings)
     if exists:
-        print(f"✅ Chroma collection '{collection_name}' already exists at {vector_db_persisted_path}") 
-        #UPDATE THE VECTOR STORE WITH NEW DOCUMENTS AND ENSURE NO REPEATS
+        logger.info(f"✅ Chroma collection '{collection_name}' already exists at {vector_db_persisted_path}")
+        # UPDATE THE VECTOR STORE WITH NEW DOCUMENTS AND ENSURE NO REPEATS
         chroma_vectorstore.add_documents(documents)
     else:
         chroma_vectorstore = Chroma.from_documents(
@@ -193,11 +200,12 @@ def chroma_create_from_documents(collection_name: str,
             collection_name=collection_name
         )
     # Note: Data is automatically persisted when persist_directory is provided
-    print(f"✅ Chroma vector store created and saved to {vector_db_persisted_path}")
+    logger.info(f"✅ Chroma vector store created and saved to {vector_db_persisted_path}")
     return chroma_vectorstore
-    
 
-def get_chroma_vectorstore(collection_name: str,  vector_db_persisted_path: str, retriever_embeddings: Embeddings) -> Chroma:
+
+def get_chroma_vectorstore(collection_name: str, vector_db_persisted_path: str,
+                           retriever_embeddings: Embeddings) -> Chroma:
     """ 
     Get a Chroma vector store for the specified collection.
     Simple Explanation:
@@ -215,9 +223,9 @@ def get_chroma_vectorstore(collection_name: str,  vector_db_persisted_path: str,
 
         Chroma: A Chroma vector store object.
     """
-                        
+
     return Chroma(
         persist_directory=vector_db_persisted_path,
         collection_name=collection_name,
         embedding_function=retriever_embeddings,
-        )
+    )

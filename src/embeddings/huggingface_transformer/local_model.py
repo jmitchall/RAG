@@ -1,8 +1,9 @@
 import numpy as np
 import torch
+from embeddings.embedding_model_interace import EmbeddingModelInterface
 from transformers import AutoTokenizer, AutoModel
 from typing import List, Dict, Tuple
-from embeddings.embedding_model_interace import EmbeddingModelInterface
+from refection_logger import logger
 
 class HuggingFaceLocalModel(EmbeddingModelInterface):
 
@@ -27,17 +28,16 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         }
         self.torch_dtype = self.dtype_map.get(torch_dtype, torch.float16)
         if max_tokens <= 0:
-            self._max_tokens, self._safe_embedding_dim = HuggingFaceLocalModel.estimate_optimal_max_token_actual_embeddings( 
-            model_name,
-            batch_processing=False,  # Changed to False since we're forcing individual processing
-            safety_level=safety_level  # Using safe mode
+            self._max_tokens, self._safe_embedding_dim = HuggingFaceLocalModel.estimate_optimal_max_token_actual_embeddings(
+                model_name,
+                batch_processing=False,  # Changed to False since we're forcing individual processing
+                safety_level=safety_level  # Using safe mode
             )
 
-            print(f"Initializing embedding manager with {model_name}, preferably with previous Vector DB Embeddings...")
-            print(f"📏 Using max_tokens: {self._max_tokens}, safe_embedding_dim: {self._safe_embedding_dim}")
+            logger.info(f"Initializing embedding manager with {model_name}, preferably with previous Vector DB Embeddings...")
+            logger.info(f"📏 Using max_tokens: {self._max_tokens}, safe_embedding_dim: {self._safe_embedding_dim}")
 
         self.load_local_model()
-
 
     def calculate_avg_words_per_token(self, documents: List[str]) -> float:
         """
@@ -48,20 +48,20 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         """
         if not documents:
             return 0.75  # Default fallback
-        
+
         ratios = []
         for doc in documents[:10]:  # Sample first 10 docs for speed
             if len(doc) > 0:
                 word_count = len(doc.split())
                 token_count = len(self.tokenizer.encode(doc))
                 ratios.append(word_count / token_count)
-        
+
         return sum(ratios) / len(ratios) if ratios else 0.75
 
     @property
     def safe_embedding_dim(self) -> int:
         return self._safe_embedding_dim
-   
+
     @staticmethod
     def create_instance(**kwargs):
         """
@@ -75,8 +75,7 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
     def load_local_model(self):
         self.use_server = False
         """Load model locally using transformers library instead of vLLM server."""
-        print(f"💻 Loading model locally: {self.model_name}")
-
+        logger.info(f"💻 Loading model locally: {self.model_name}")
 
         # Load a tokenizer - this converts text into numbers that the AI model can understand
         # Think of it like a dictionary that maps words to numbers
@@ -85,7 +84,7 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         #
         # * Download the tokenizer files from Hugging Face
         # * Store them in a local cache directory
-        # * Print messages like: Downloading tokenizer_config.json...
+        # * logger.info messages like: Downloading tokenizer_config.json...
         #
         # 2. Cache Location:
         # Linux/Mac
@@ -97,15 +96,15 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         #
         # 3. Subsequent Loads:
         # The next time you load the same model, it will use the cached files
-        # and print messages like: Already cached, loading...
+        # and logger.info messages like: Already cached, loading...
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name
             # , cache_dir="./model_cache"  # Optional: specify custom cache directory
         )
         # Check where it's cached
-        print(f"Cache directory: {self.tokenizer.name_or_path}")
-        print(f"Full cache path: {self.tokenizer.init_kwargs.get('name_or_path')}")
-        print(f"✅ Tokenizer loaded")
+        logger.info(f"Cache directory: {self.tokenizer.name_or_path}")
+        logger.info(f"Full cache path: {self.tokenizer.init_kwargs.get('name_or_path')}")
+        logger.info(f"✅ Tokenizer loaded")
 
         # ~/.cache/huggingface/hub/
         # └── models--BAAI--bge-base-en-v1.5/
@@ -125,7 +124,7 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         # 1. Download the model files from Hugging Face
         # * Download the model files (BIG files, can be hundreds of MB)
         # * Store them in the local cache directory
-        # * Print messages like: Downloading pytorch_model.bin...
+        # * logger.info messages like: Downloading pytorch_model.bin...
         #
         # # 2. Cache Location:
         # Linux/Mac
@@ -137,7 +136,7 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         #
         # 3. Subsequent Loads:
         # The next time you load the same model, it will use the cached files
-        # and print messages like: Already cached, loading...
+        # and logger.info messages like: Already cached, loading...
         #
         # ~/.cache/huggingface/hub/models--BAAI--bge-base-en-v1.5/
         # ├── config.json              # Model architecture config
@@ -158,10 +157,10 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
             # Move the model to GPU memory for much faster processing
             # GPU can do thousands of calculations in parallel, CPU does them one by one
             self.model.to('cuda')
-            print(f"⚡ Model loaded on GPU with dtype={self.torch_dtype}")
+            logger.info(f"⚡ Model loaded on GPU with dtype={self.torch_dtype}")
         else:
-            print(f"💻 Model loaded on CPU")
-        print(f"✅ Local model is ready to get embeddings")
+            logger.info(f"💻 Model loaded on CPU")
+        logger.info(f"✅ Local model is ready to get embeddings")
 
     def get_embedding_local(self, text: str) -> np.ndarray:
         """
@@ -327,10 +326,10 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         """
         limits = HuggingFaceLocalModel.get_supported_model_token_limits(model_name)
 
-        print(f"📏 Token limits for {model_name}:")
-        print(f"   Max context: {limits['max_context']} tokens")
-        print(f"   Recommended: {limits['recommended_max']} tokens")
-        print(f"   Safe: {limits['safe_max']} tokens")
+        logger.info(f"📏 Token limits for {model_name}:")
+        logger.info(f"   Max context: {limits['max_context']} tokens")
+        logger.info(f"   Recommended: {limits['recommended_max']} tokens")
+        logger.info(f"   Safe: {limits['safe_max']} tokens")
 
         # Choose based on safety level
         if safety_level == "max":
@@ -343,9 +342,9 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         if batch_processing:
             # Batch processing might need extra buffer
             base_tokens = int(base_tokens * 0.8)  # Reduced from 0.85 to 0.8
-            print(f"   Reduced by 20% for batch processing: {base_tokens}")
+            logger.info(f"   Reduced by 20% for batch processing: {base_tokens}")
 
-        print(f"🎯 Selected max_tokens: {base_tokens}")
+        logger.info(f"🎯 Selected max_tokens: {base_tokens}")
         return base_tokens
 
     # Method to get embeddings for multiple pieces of text at once (more efficient than one-by-one)
@@ -391,19 +390,19 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
         try:
             sample_embedding = self.get_embedding("test")
             actual_dim = len(sample_embedding)
-            print(f"✅ Verified embedding dimension: {actual_dim} for model {self.model_name}")
+            logger.info(f"✅ Verified embedding dimension: {actual_dim} for model {self.model_name}")
             return actual_dim
         except Exception as e:
-            print(f"⚠️  Could not verify embedding dimension: {e} for model {self.model_name}")
+            logger.info(f"⚠️  Could not verify embedding dimension: {e} for model {self.model_name}")
             return 768
-    
+
     @staticmethod
-    def detect_embedding_dimension( model_name: str, max_tokens: int = 250) -> int:
+    def detect_embedding_dimension(model_name: str, max_tokens: int = 250) -> int:
         """
         Detect the actual embedding dimension from the model by making a test call.
         This is the most reliable way to get the correct dimension.
         """
-        print(f"🔍 Detecting embedding dimension for model: {model_name}")
+        logger.info(f"🔍 Detecting embedding dimension for model: {model_name}")
         limits = HuggingFaceLocalModel.get_supported_model_token_limits(model_name)
         try:
             # Create a temporary embedding manager with a placeholder dimension
@@ -417,7 +416,7 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
             return temp_model.get_actual_embedding_dimension()
 
         except Exception as e:
-            print(f"⚠️  Could not detect embedding dimension: {e}")
+            logger.info(f"⚠️  Could not detect embedding dimension: {e}")
 
             # Fallback to known dimensions for common models
             model_dimensions = {
@@ -432,7 +431,7 @@ class HuggingFaceLocalModel(EmbeddingModelInterface):
             }
 
             fallback_dim = model_dimensions.get(model_name, 768)
-            print(f"📚 Using known dimension for {model_name}: {fallback_dim}")
+            logger.info(f"📚 Using known dimension for {model_name}: {fallback_dim}")
             return fallback_dim
 
     @staticmethod

@@ -11,10 +11,11 @@ Uses local transformer models via HuggingFace - no server needed.
 # It's like a calculator that can work with thousands of numbers at once
 import numpy as np
 from abc import ABC
+from embeddings.embedding_model_interace import EmbeddingModelInterface
 # Import transformers library - this loads AI models directly onto our computer
 # Import List type hint - this tells Python we're working with lists (like [1, 2, 3])
 from typing import List
-from embeddings.embedding_model_interace import EmbeddingModelInterface
+
 
 # Define a new class called EmbeddingManager - this handles converting text into mathematical vectors
 # Think of it like a translator that converts human language into numbers that computers can understand
@@ -31,7 +32,7 @@ class EmbeddingManager(ABC):
     # dtype: Model precision ("float16", "bfloat16", "float32")
     def __init__(
             self,
-            embedding_model_instance:EmbeddingModelInterface,
+            embedding_model_instance: EmbeddingModelInterface,
             embedding_dim: int = 1024,
     ):
         """
@@ -43,7 +44,7 @@ class EmbeddingManager(ABC):
         """
         # If an embedding model instance is provided, use it directly
         if embedding_model_instance is not None:
-                self.embedding_model = embedding_model_instance
+            self.embedding_model = embedding_model_instance
         else:
             # throw error if no instance provided
             raise ValueError("An embedding_model_instance must be provided to EmbeddingManager")
@@ -87,5 +88,3 @@ class EmbeddingManager(ABC):
         This is used as a verification step after creating the manager.
         """
         return self.embedding_model.get_actual_embedding_dimension()
-
-

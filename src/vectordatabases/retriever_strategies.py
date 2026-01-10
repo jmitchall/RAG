@@ -8,24 +8,24 @@ This module provides configuration and utilities for various retrieval strategie
 - Hybrid approaches: Combine multiple strategies
 """
 
-from typing import Literal, Optional
 from dataclasses import dataclass
+from typing import Literal, Optional
 
 
 @dataclass
 class RetrievalConfig:
     """Configuration for retrieval strategies."""
-    
+
     # Basic parameters
     k: int = 5  # Number of documents to return
-    
+
     # Search strategy
     search_type: Literal["similarity", "mmr"] = "similarity"
     """
     - "similarity": Pure relevance-based search (fastest)
     - "mmr": Maximal Marginal Relevance - balances relevance with diversity
     """
-    
+
     # Score filtering
     score_threshold: Optional[float] = None
     """
@@ -33,11 +33,11 @@ class RetrievalConfig:
     Only documents above this threshold will be returned.
     Recommended: 0.7-0.8 for high confidence results
     """
-    
+
     # MMR-specific parameters
     fetch_k: int = 20
     """For MMR: Number of candidates to fetch before diversity filtering"""
-    
+
     lambda_mult: float = 0.5
     """
     For MMR: Balance between relevance and diversity
@@ -45,7 +45,7 @@ class RetrievalConfig:
     - 0.5 = balanced (default)
     - 0.0 = maximum diversity (may sacrifice relevance)
     """
-    
+
     def __str__(self) -> str:
         parts = [f"k={self.k}", f"search={self.search_type}"]
         if self.score_threshold:
@@ -103,13 +103,13 @@ def get_retrieval_strategy(strategy_name: str) -> RetrievalConfig:
         "diverse": DIVERSE_CONFIG,
         "comprehensive": COMPREHENSIVE_CONFIG,
     }
-    
+
     if strategy_name not in strategies:
         raise ValueError(
             f"Unknown strategy '{strategy_name}'. "
             f"Available strategies: {list(strategies.keys())}"
         )
-    
+
     return strategies[strategy_name]
 
 

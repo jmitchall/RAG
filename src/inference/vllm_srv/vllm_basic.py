@@ -21,14 +21,14 @@ def main():
     # The output is a list of RequestOutput objects
     # that contain the prompt, generated text, and other information.
     outputs = llm.generate(prompts, sampling_params)
-    # Print the outputs.
-    print("\nGenerated Outputs:\n" + "-" * 60)
+    # logger.info the outputs.
+    logger.info("\nGenerated Outputs:\n" + "-" * 60)
     for output in outputs:
         prompt = output.prompt
         generated_text = output.outputs[0].text
-        print(f"Prompt:    {prompt!r}")
-        print(f"Output:    {generated_text!r}")
-        print("-" * 60)
+        logger.info(f"Prompt:    {prompt!r}")
+        logger.info(f"Output:    {generated_text!r}")
+        logger.info("-" * 60)
 
 
 if __name__ == "__main__":

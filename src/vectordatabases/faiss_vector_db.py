@@ -3,13 +3,12 @@ import numpy as np
 import os
 import pickle
 import torch
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from typing import List, Optional
-
 from vectordatabases.vector_db_interface import VectorDBInterface
-
+from refection_logger import logger
 
 class FaissVectorDB(VectorDBInterface):
     """FAISS implementation of vector database with enhanced GPU support
@@ -23,7 +22,7 @@ class FaissVectorDB(VectorDBInterface):
     - self.softmax_temperature: Temperature parameter for confidence score softmax normalization
     """
 
-    def __init__(self, embedding_dim: int =0, persist_path: Optional[str] = None, use_gpu: bool = True,
+    def __init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None, use_gpu: bool = True,
                  gpu_memory_fraction: float = 0.8, **kwargs):
         super().__init__(embedding_dim, persist_path, **kwargs)
 
@@ -46,14 +45,14 @@ class FaissVectorDB(VectorDBInterface):
         try:
             # Check if FAISS GPU is available
             if not hasattr(faiss, 'StandardGpuResources'):
-                print(f"ℹ️  FAISS CPU version detected (no GPU support)")
-                print(f"💡 For GPU support, install: pip install faiss-gpu")
+                logger.info(f"ℹ️  FAISS CPU version detected (no GPU support)")
+                logger.info(f"💡 For GPU support, install: pip install faiss-gpu")
                 self.gpu_available = False
                 return
 
             # Check if CUDA is available
             if not torch.cuda.is_available():
-                print(f"ℹ️  CUDA not available, using CPU")
+                logger.info(f"ℹ️  CUDA not available, using CPU")
                 self.gpu_available = False
                 return
 
@@ -63,9 +62,9 @@ class FaissVectorDB(VectorDBInterface):
             gpu_name = torch.cuda.get_device_name(current_gpu)
             gpu_memory = torch.cuda.get_device_properties(current_gpu).total_memory
 
-            print(f"🚀 GPU detected: {gpu_name}")
-            print(f"💾 GPU Memory: {gpu_memory / 1e9:.1f} GB")
-            print(f"🔢 Available GPUs: {gpu_count}")
+            logger.info(f"🚀 GPU detected: {gpu_name}")
+            logger.info(f"💾 GPU Memory: {gpu_memory / 1e9:.1f} GB")
+            logger.info(f"🔢 Available GPUs: {gpu_count}")
 
             # Setup GPU resources with memory management
             self.gpu_resources = faiss.StandardGpuResources()
@@ -74,13 +73,13 @@ class FaissVectorDB(VectorDBInterface):
             available_memory = int(gpu_memory * self.gpu_memory_fraction)
             self.gpu_resources.setTempMemory(available_memory)
 
-            print(f"⚙️  Allocated {available_memory / 1e9:.1f} GB GPU memory for FAISS")
+            logger.info(f"⚙️  Allocated {available_memory / 1e9:.1f} GB GPU memory for FAISS")
 
             self.gpu_available = True
 
         except Exception as e:
-            print(f"⚠️  GPU setup failed: {str(e)}")
-            print(f"💻 Falling back to CPU")
+            logger.info(f"⚠️  GPU setup failed: {str(e)}")
+            logger.info(f"💻 Falling back to CPU")
             self.gpu_available = False
             self.gpu_resources = None
 
@@ -93,27 +92,25 @@ class FaissVectorDB(VectorDBInterface):
             try:
                 # Move to GPU with device 0
                 self.index = faiss.index_cpu_to_gpu(self.gpu_resources, 0, self.index)
-                print(f"✅ Created new FAISS vector database with GPU acceleration")
+                logger.info(f"✅ Created new FAISS vector database with GPU acceleration")
 
-                # Print GPU index information
-                print(f"⚡ GPU Index Type: {type(self.index).__name__}")
+                # logger.info GPU index information
+                logger.info(f"⚡ GPU Index Type: {type(self.index).__name__}")
 
             except Exception as e:
-                print(f"⚠️  GPU index creation failed: {str(e)}")
-                print(f"💻 Using CPU index instead")
+                logger.info(f"⚠️  GPU index creation failed: {str(e)}")
+                logger.info(f"💻 Using CPU index instead")
                 self.gpu_available = False
                 # Recreate CPU index
                 self.index = faiss.IndexFlatL2(self.embedding_dim)
         else:
-            print(f"💻 Created new FAISS vector database with CPU")
-
+            logger.info(f"💻 Created new FAISS vector database with CPU")
 
     def get_max_document_length(self) -> int:
         if self.documents:
             return max(len(doc.page_content) for doc in self.documents)
         return 0
-     
-     
+
     def add_documents(self, docs: List[Document], embeddings: List[np.ndarray]) -> None:
         if len(docs) != len(embeddings):
             raise ValueError("Number of documents must match number of embeddings")
@@ -128,7 +125,7 @@ class FaissVectorDB(VectorDBInterface):
         # GPU-accelerated preprocessing if available
         if self.gpu_available and len(embeddings) > 100:
             try:
-                print(f"🚀 Using GPU for embedding preprocessing...")
+                logger.info(f"🚀 Using GPU for embedding preprocessing...")
 
                 # Convert to GPU tensors for normalization (optional but can improve search quality)
                 gpu_embeddings = torch.tensor(embeddings_array, device='cuda')
@@ -139,11 +136,11 @@ class FaissVectorDB(VectorDBInterface):
                 # Convert back to CPU numpy for FAISS
                 embeddings_array = gpu_embeddings.cpu().numpy().astype(np.float32)
 
-                print(f"✅ Preprocessed {len(embeddings)} embeddings on GPU")
+                logger.info(f"✅ Preprocessed {len(embeddings)} embeddings on GPU")
 
             except Exception as e:
-                print(f"⚠️  GPU preprocessing failed: {e}")
-                print(f"💻 Using original embeddings")
+                logger.info(f"⚠️  GPU preprocessing failed: {e}")
+                logger.info(f"💻 Using original embeddings")
 
         # Add to index
         try:
@@ -151,14 +148,14 @@ class FaissVectorDB(VectorDBInterface):
             self.documents.extend(docs)
 
             hardware_type = "GPU" if self.gpu_available else "CPU"
-            print(f"📄 Added {len(docs)} documents to FAISS vector database ({hardware_type})")
-            print(f"📊 Total documents: {len(self.documents)}")
+            logger.info(f"📄 Added {len(docs)} documents to FAISS vector database ({hardware_type})")
+            logger.info(f"📊 Total documents: {len(self.documents)}")
 
-            # Print index statistics
-            print(f"🔢 Index size: {self.index.ntotal} vectors")
+            # logger.info index statistics
+            logger.info(f"🔢 Index size: {self.index.ntotal} vectors")
 
         except Exception as e:
-            print(f"❌ Failed to add documents: {e}")
+            logger.info(f"❌ Failed to add documents: {e}")
             raise
 
     def _confidence_softmax(self, distances: np.ndarray) -> np.ndarray:
@@ -167,11 +164,10 @@ class FaissVectorDB(VectorDBInterface):
         exp_scores = np.exp(negative_distances - np.max(negative_distances))
         probabilities = exp_scores / np.sum(exp_scores)
         return probabilities
-    
 
     def search(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Document]:
         if len(self.documents) == 0:
-            print("⚠️  No documents in vector database to search")
+            logger.info("⚠️  No documents in vector database to search")
             return []
 
         if query_embedding.shape[0] != self.embedding_dim:
@@ -188,7 +184,7 @@ class FaissVectorDB(VectorDBInterface):
                 gpu_query = torch.nn.functional.normalize(gpu_query.unsqueeze(0), p=2, dim=1)
                 query_array = gpu_query.squeeze(0).cpu().numpy().astype(np.float32).reshape(1, -1)
             except Exception as e:
-                print(f"⚠️  GPU query preprocessing failed: {e}")
+                logger.info(f"⚠️  GPU query preprocessing failed: {e}")
                 query_array = np.array([query_embedding], dtype=np.float32)
         else:
             query_array = np.array([query_embedding], dtype=np.float32)
@@ -199,7 +195,6 @@ class FaissVectorDB(VectorDBInterface):
 
             # Convert distances to confidence percentages
             confidence_percentages = self._confidence_softmax(distances[0])
-           
 
             results = []
             for i, (distance, idx, confidence) in enumerate(zip(distances[0], indices[0], confidence_percentages)):
@@ -217,11 +212,11 @@ class FaissVectorDB(VectorDBInterface):
                         }
                     )
                     results.append(doc_with_score)
-            
+
             if results:
                 hardware_type = "GPU-accelerated" if self.gpu_available else "CPU"
-                print(f"🔍 Found {len(results)} similar documents ({hardware_type} search)")
-            
+                logger.info(f"🔍 Found {len(results)} similar documents ({hardware_type} search)")
+
             # L2 (Euclidean) distances between the query embedding and the matched document embedding
             # Shape: (1, top_k) - the first dimension is for the query batch (always 1 in this code), second is the number of results
             # Lower distances = more similar documents (since it's measuring distance, not similarity)
@@ -231,7 +226,7 @@ class FaissVectorDB(VectorDBInterface):
             return results
 
         except Exception as e:
-            print(f"❌ Search failed: {e}")
+            logger.info(f"❌ Search failed: {e}")
             return []
 
     def save(self) -> None:
@@ -247,7 +242,7 @@ class FaissVectorDB(VectorDBInterface):
         try:
             # Save index (move to CPU first if on GPU)
             if self.gpu_available and hasattr(faiss, 'index_gpu_to_cpu'):
-                print(f"💾 Moving GPU index to CPU for saving...")
+                logger.info(f"💾 Moving GPU index to CPU for saving...")
                 cpu_index = faiss.index_gpu_to_cpu(self.index)
                 faiss.write_index(cpu_index, index_file)
             else:
@@ -268,10 +263,10 @@ class FaissVectorDB(VectorDBInterface):
             with open(config_file, 'wb') as f:
                 pickle.dump(config_info, f)
 
-            print(f"💾 FAISS vector database saved to {self.persist_path}")
+            logger.info(f"💾 FAISS vector database saved to {self.persist_path}")
 
         except Exception as e:
-            print(f"❌ Failed to save database: {e}")
+            logger.info(f"❌ Failed to save database: {e}")
             raise
 
     def load(self) -> bool:
@@ -287,7 +282,7 @@ class FaissVectorDB(VectorDBInterface):
 
         try:
             # Load index
-            print(f"📥 Loading FAISS index from {index_file}...")
+            logger.info(f"📥 Loading FAISS index from {index_file}...")
             self.index = faiss.read_index(index_file)
 
             # Load configuration if available
@@ -298,19 +293,19 @@ class FaissVectorDB(VectorDBInterface):
                     self.embedding_dim = config_info.get('embedding_dim', self.embedding_dim)
 
                     if saved_gpu and not self.gpu_available:
-                        print(f"ℹ️  Index was created with GPU but GPU not available, using CPU")
+                        logger.info(f"ℹ️  Index was created with GPU but GPU not available, using CPU")
                     elif not saved_gpu and self.gpu_available:
-                        print(f"ℹ️  Index was created with CPU but GPU available, moving to GPU")
+                        logger.info(f"ℹ️  Index was created with CPU but GPU available, moving to GPU")
 
             # Move to GPU if available
             if self.gpu_available:
                 try:
-                    print(f"⚡ Moving loaded index to GPU...")
+                    logger.info(f"⚡ Moving loaded index to GPU...")
                     self.index = faiss.index_cpu_to_gpu(self.gpu_resources, 0, self.index)
-                    print(f"✅ Successfully moved index to GPU")
+                    logger.info(f"✅ Successfully moved index to GPU")
                 except Exception as e:
-                    print(f"⚠️  Could not move loaded index to GPU: {str(e)}")
-                    print(f"💻 Using CPU instead")
+                    logger.info(f"⚠️  Could not move loaded index to GPU: {str(e)}")
+                    logger.info(f"💻 Using CPU instead")
                     self.gpu_available = False
 
             # Load documents
@@ -319,15 +314,15 @@ class FaissVectorDB(VectorDBInterface):
 
             # Verify consistency
             if self.index.ntotal != len(self.documents):
-                print(f"⚠️  Index has {self.index.ntotal} vectors but {len(self.documents)} documents")
+                logger.info(f"⚠️  Index has {self.index.ntotal} vectors but {len(self.documents)} documents")
                 return False
 
             hardware_type = "GPU" if self.gpu_available else "CPU"
-            print(f"✅ Successfully loaded FAISS database with {len(self.documents)} documents ({hardware_type})")
+            logger.info(f"✅ Successfully loaded FAISS database with {len(self.documents)} documents ({hardware_type})")
             return True
 
         except Exception as e:
-            print(f"❌ Failed to load FAISS database: {str(e)}")
+            logger.info(f"❌ Failed to load FAISS database: {str(e)}")
             return False
 
     def get_total_documents(self) -> int:
@@ -352,15 +347,15 @@ class FaissVectorDB(VectorDBInterface):
         if self.gpu_available:
             try:
                 # GPU-specific optimizations could go here
-                print(f"⚙️  Index already optimized for GPU")
+                logger.info(f"⚙️  Index already optimized for GPU")
             except Exception as e:
-                print(f"⚠️  GPU optimization failed: {e}")
+                logger.info(f"⚠️  GPU optimization failed: {e}")
         else:
-            print(f"💻 CPU index is already optimized")
+            logger.info(f"💻 CPU index is already optimized")
 
     def get_embedding_dim(self) -> int:
         return self.embedding_dim
-    
+
     def delete_collection(self, **kwargs) -> bool:
         """ 
         Delete Table or collection supported by the 
@@ -384,13 +379,13 @@ class FaissVectorDB(VectorDBInterface):
                 for file in [index_file, docs_file, config_file]:
                     if os.path.exists(file):
                         os.remove(file)
-                        print(f"🗑️  Deleted file: {file}")
+                        logger.info(f"🗑️  Deleted file: {file}")
 
-            print(f"✅ Successfully deleted FAISS collection and associated files")
+            logger.info(f"✅ Successfully deleted FAISS collection and associated files")
             return True
 
         except Exception as e:
-            print(f"❌ Failed to delete collection: {e}")
+            logger.info(f"❌ Failed to delete collection: {e}")
             return False
 
     def as_langchain_retriever(self, embedding_function, top_k: int = 5):
@@ -431,10 +426,10 @@ class FaissLangChainRetriever(BaseRetriever):
         arbitrary_types_allowed = True
 
     def _get_relevant_documents(
-        self,
-        query: str,
-        *,
-        run_manager: Optional[CallbackManagerForRetrieverRun] = None
+            self,
+            query: str,
+            *,
+            run_manager: Optional[CallbackManagerForRetrieverRun] = None
     ) -> List[Document]:
         """Retrieve documents relevant to the query
            1. When LangChain sees retriever in the context
@@ -449,10 +444,11 @@ class FaissLangChainRetriever(BaseRetriever):
             List of relevant documents with similarity scores
         """
         chunk_size = self.vector_db.get_max_document_length()
-        print(f"Max document length in vector DB: {chunk_size} characters")
+        logger.info(f"Max document length in vector DB: {chunk_size} characters")
         query_text_input = query
         if len(query_text_input) > chunk_size:
-            print(f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
+            logger.info(
+                f"⚠️  Query text length ({len(query)}) exceeds max document length in vector DB ({chunk_size}). Truncating query.")
             query_text_input = query_text_input[:chunk_size]
 
         # Generate embedding for the query
@@ -464,10 +460,10 @@ class FaissLangChainRetriever(BaseRetriever):
 
         # Search the vector database
         results = self.vector_db.search(query_embedding, top_k=self.top_k)
-        
-        print(f"\n🔍 Retrieved {len(results)} documents for query '{query_text_input}'")
+
+        logger.info(f"\n🔍 Retrieved {len(results)} documents for query '{query_text_input}'")
         return results
-    
+
     def format_list_documents_as_string(self, **kwargs) -> str:
         """Format a list of Documents into a human-readable string with metadata.
         
@@ -481,14 +477,13 @@ class FaissLangChainRetriever(BaseRetriever):
         results = kwargs.get('results', [])
         if not results:
             return ''
-        context =""
+        context = ""
         for i, doc in enumerate(results, 1):
-            print(f"\n--- Result {i} ---")
-            print(f"Content: {doc.page_content}")
-            print(f"Source: {doc.metadata.get('source', 'unknown')}")
-            print(f"Similarity Score: {doc.metadata.get('similarity_score', 'N/A'):.4f}")
-            print(f"distance Score: {doc.metadata.get('distance', 'N/A'):.4f}")
-            print(f"Search Rank: {doc.metadata.get('search_rank', 'N/A')}")
+            logger.info(f"\n--- Result {i} ---")
+            logger.info(f"Content: {doc.page_content}")
+            logger.info(f"Source: {doc.metadata.get('source', 'unknown')}")
+            logger.info(f"Similarity Score: {doc.metadata.get('similarity_score', 'N/A'):.4f}")
+            logger.info(f"distance Score: {doc.metadata.get('distance', 'N/A'):.4f}")
+            logger.info(f"Search Rank: {doc.metadata.get('search_rank', 'N/A')}")
             context += doc.page_content + "\n\n"
         return context
-

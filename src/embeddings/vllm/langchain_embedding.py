@@ -1,18 +1,19 @@
-from typing import List
-from langchain_core.embeddings import Embeddings
-from vllm import LLM
 import torch
+from langchain_core.embeddings import Embeddings
+from typing import List
+from vllm import LLM
+from refection_logger import logger
 
 # This class creates an "embeddings" system using vLLM (a fast AI model library)
 # Think of embeddings as converting text into numbers that computers can understand and compare
 # For example, "cat" and "kitten" would get similar numbers because they mean similar things
 class VLLMOfflineEmbeddings(Embeddings):
     def __init__(
-        self, 
-        model_name: str,
-        tensor_parallel_size: int = 1,
-        gpu_memory_utilization: float = 0.9,
-        device: str = "cuda"
+            self,
+            model_name: str,
+            tensor_parallel_size: int = 1,
+            gpu_memory_utilization: float = 0.9,
+            device: str = "cuda"
     ):
         """
         Set up the embedding system with GPU (graphics card) support for faster processing.
@@ -38,32 +39,31 @@ class VLLMOfflineEmbeddings(Embeddings):
                    GPU (cuda) is much faster but requires a compatible graphics card
                    CPU works on any computer but is slower
         """
-        
+
         # STEP 1: Check if a GPU is actually available on this computer
         # CUDA is the technology that lets us use NVIDIA graphics cards for AI
         if device == "cuda" and not torch.cuda.is_available():
             # If user asked for GPU but it's not available, warn them and use CPU instead
-            print("Warning: CUDA not available, falling back to CPU")
+            logger.info("Warning: CUDA not available, falling back to CPU")
             device = "cpu"
-        
+
         # STEP 2: Create the actual AI model (called a "client" here)
         # This is like opening the translator app and loading the dictionary
         self.client = LLM(
             model=model_name,  # Which AI model to load (like which language dictionary to use)
             task="embed",  # Tell it we want to convert text to numbers (embeddings), not generate text
-            
+
             # Only use multiple GPUs if we're actually using GPU mode
             # If on CPU, we set this to 1 since CPU doesn't support parallel processing the same way
             tensor_parallel_size=tensor_parallel_size if device == "cuda" else 1,
-            
+
             # Only use GPU memory if we're in GPU mode
             # Set to 0.0 for CPU since CPU uses regular RAM, not GPU memory
             gpu_memory_utilization=gpu_memory_utilization if device == "cuda" else 0.0,
         )
-        
+
         # STEP 3: Remember which device we're using so we can check it later if needed
         self.device = device
-
 
     @property
     def max_tokens(self) -> int:
@@ -80,7 +80,7 @@ class VLLMOfflineEmbeddings(Embeddings):
             "BAAI/bge-large-en-v1.5": 1024,
             "intfloat/e5-large-v2": 512,
         }
-        
+
         # Dynamically get from the model config if not in our predefined list
         try:
             return self.client.llm_engine.model_config.max_model_len
@@ -115,7 +115,7 @@ class VLLMOfflineEmbeddings(Embeddings):
         """
         # Send all the texts to the AI model to be converted
         outputs = self.client.embed(texts)
-        
+
         # Extract just the embedding numbers from the model's output
         # "out.outputs.embedding" means: for each output, get the embedding part
         return [out.outputs.embedding for out in outputs]
@@ -180,7 +180,7 @@ class VLLMOfflineEmbeddings(Embeddings):
 
 # # 4. Invoke the chain
 # response = chain.invoke("What is vLLM?")
-# print(response)
+# logger.info(response)
 
 
 #  Setup Embeddings & Vector Store
@@ -204,4 +204,4 @@ class VLLMOfflineEmbeddings(Embeddings):
 # )
 # retriever = vectorstore.as_retriever()
 
-# 
+#

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Import the main libraries we need from vLLM
 from vllm import LLM, SamplingParams  # LLM = Large Language Model, SamplingParams = AI response settings
+from refection_logger import logger
 # =============================================================================
 # CONFIGURATION SECTION - Choose your questions and AI model settings
 # =============================================================================
@@ -15,22 +16,22 @@ from vllm import LLM, SamplingParams  # LLM = Large Language Model, SamplingPara
 # - Use for creative writing, brainstorming, varied responses
 # - Each run produces different output
 sampling_params_random = SamplingParams(
-    temperature=0.3,        # 👈 LOWERED: 0.3 = less random, more coherent (0.7 was too high for small models)
-    top_p=0.9,              # Nucleus sampling
-    top_k=50,               # 👈 ADDED: Limit to top 50 tokens (prevents garbage/whitespace tokens)
+    temperature=0.3,  # 👈 LOWERED: 0.3 = less random, more coherent (0.7 was too high for small models)
+    top_p=0.9,  # Nucleus sampling
+    top_k=50,  # 👈 ADDED: Limit to top 50 tokens (prevents garbage/whitespace tokens)
     max_tokens=256,
-    repetition_penalty=1.05 # 👈 LOWERED: 1.05 is gentler (1.1 can over-penalize and cause issues)
+    repetition_penalty=1.05  # 👈 LOWERED: 1.05 is gentler (1.1 can over-penalize and cause issues)
 )
 
 # MODE 2: DETERMINISTIC OUTPUT (Same every time)
 # - Use for consistent results, testing, factual queries
 # - Each run produces IDENTICAL output
 sampling_params_deterministic = SamplingParams(
-    temperature=0.0,        # 👈 No randomness = greedy decoding (always pick most likely token)
-    top_p=0.9,              # Not used when temperature=0
+    temperature=0.0,  # 👈 No randomness = greedy decoding (always pick most likely token)
+    top_p=0.9,  # Not used when temperature=0
     max_tokens=256,
-    repetition_penalty=1.05, # 👈 LOWERED: 1.05 is gentler (1.1 can over-penalize and cause issues)
-    seed=42                 # 👈 Fixed random seed for reproducibility
+    repetition_penalty=1.05,  # 👈 LOWERED: 1.05 is gentler (1.1 can over-penalize and cause issues)
+    seed=42  # 👈 Fixed random seed for reproducibility
 )
 
 # Choose which mode to use:
@@ -45,12 +46,13 @@ def get_vllm_facebook_opt_125m(download_dir=None):
     else:
         # ALTERNATIVE Load. Load and save model locally
         llm = LLM(model=model_name, download_dir=download_dir)
-        
+
     # Only 125 million parameters, if "./models/opt-125m" does not exist, 
     # it will be downloaded and saved there. 
-    print(f"✅ AI model loaded successfully!")
-    print(f"📊 Model: {llm.llm_engine.model_config.model}")
+    logger.info(f"✅ AI model loaded successfully!")
+    logger.info(f"📊 Model: {llm.llm_engine.model_config.model}")
     return llm
+
 
 def facebook_opt_125m(download_dir="./models"):
     """
@@ -59,18 +61,18 @@ def facebook_opt_125m(download_dir="./models"):
     """
     # These are the questions we'll ask the AI
     prompts = [
-    "Hello, can you introduce yourself?",  # Simple greeting
-    "What is the capital of France and why is it important?",  # Factual question
-    "Explain the future of AI in 2-3 sentences.",  # Opinion question
-    "Write a short Python function to calculate fibonacci numbers.",  # Programming task
-]
-    llm= get_vllm_facebook_opt_125m(download_dir=download_dir)
+        "Hello, can you introduce yourself?",  # Simple greeting
+        "What is the capital of France and why is it important?",  # Factual question
+        "Explain the future of AI in 2-3 sentences.",  # Opinion question
+        "Write a short Python function to calculate fibonacci numbers.",  # Programming task
+    ]
+    llm = get_vllm_facebook_opt_125m(download_dir=download_dir)
     # =================================================================
     # STEP 2: Ask the AI all our questions
     # =================================================================
 
-    print(f"\n🗣️  Asking {len(prompts)} questions to the AI...")
-    print("⏳ This might take a minute - the AI is thinking...")
+    logger.info(f"\n🗣️  Asking {len(prompts)} questions to the AI...")
+    logger.info("⏳ This might take a minute - the AI is thinking...")
 
     # This is where we actually send our questions to the AI
     # The AI processes ALL questions at once (called "batch processing")
@@ -80,8 +82,8 @@ def facebook_opt_125m(download_dir="./models"):
     # STEP 3: Display the results in a nice format
     # =================================================================
 
-    print("\n🎯 AI Responses:")
-    print("=" * 80)
+    logger.info("\n🎯 AI Responses:")
+    logger.info("=" * 80)
 
     # Loop through each question-answer pair
     for i, output in enumerate(outputs, 1):  # enumerate gives us a counter starting from 1
@@ -93,10 +95,10 @@ def facebook_opt_125m(download_dir="./models"):
         ai_response = output.outputs[0].text
 
         # Display everything in a nice format
-        print(f"\n📝 Question #{i}:")
-        print(f"❓ Human: {original_question}")
-        print(f"🤖 AI: {ai_response}")
-        print("-" * 80)  # Visual separator line
+        logger.info(f"\n📝 Question #{i}:")
+        logger.info(f"❓ Human: {original_question}")
+        logger.info(f"🤖 AI: {ai_response}")
+        logger.info("-" * 80)  # Visual separator line
 
-    print("\n✨ Demo completed! The AI has answered all your questions.")
-    print("💡 Try editing the 'prompts' list above to ask different questions!")
+    logger.info("\n✨ Demo completed! The AI has answered all your questions.")
+    logger.info("💡 Try editing the 'prompts' list above to ask different questions!")

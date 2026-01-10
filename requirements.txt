@@ -35,6 +35,10 @@ langchain-qdrant==0.2.1
 langgraph
 faiss-cpu==1.12.0
 chromadb==1.1.1
-qdrant-client==1.16.2
+qdrant-client<1.16
 llama-index[all]
+llama-index-embeddings-huggingface
+llama-index-vector-stores-chroma
+llama-index-vector-stores-faiss
+llama-index-vector-stores-qdrant
 pymupdf==1.26.7

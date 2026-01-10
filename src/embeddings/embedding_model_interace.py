@@ -1,7 +1,9 @@
+import numpy as np
 from abc import ABC, abstractmethod
 from typing import List, Dict
-import numpy as np
+from refection_logger import logger
 from vllm import LLM
+
 
 class EmbeddingModelInterface(ABC):
     """
@@ -19,14 +21,14 @@ class EmbeddingModelInterface(ABC):
         # Store max tokens to prevent context length errors
         self._max_tokens = max_tokens
         self._safe_embedding_dim = 0
-        print(f"📏 Text will be truncated to {self.max_tokens} tokens to avoid context length errors") 
-    
+        logger.info(f"📏 Text will be truncated to {self.max_tokens} tokens to avoid context length errors")
+
     @property
     def safe_embedding_dim(self) -> int:
-        return self._safe_embedding_dim    
-    
+        return self._safe_embedding_dim
 
-    # get property max_tokens
+        # get property max_tokens
+
     @property
     def max_tokens(self) -> int:
         return self._max_tokens
@@ -34,7 +36,6 @@ class EmbeddingModelInterface(ABC):
     @max_tokens.setter
     def max_tokens(self, value: int):
         self._max_tokens = value
-
 
     @staticmethod
     def createte_instance(**kwargs):
@@ -95,7 +96,7 @@ class EmbeddingModelInterface(ABC):
             Dict[str, int]: Mapping of model names to their token limits
         """
         raise NotImplementedError
-    
+
     def calculate_avg_words_per_token(self, documents: List[str]) -> float:
         """
         Calculate average words per token using actual tokenizer.
@@ -104,5 +105,3 @@ class EmbeddingModelInterface(ABC):
             float: Average words per token (typically ~0.75 for English)
         """
         return 0.75  # Default fallback
-    
-   
