@@ -3,15 +3,23 @@
 ## Table of Contents
 
 1. [Project Overview](#project-overview)
-2. [Project Structure](#project-structure)
-3. [Root Level Files](#root-level-files)
-4. [Source Code Directory (src/)](#source-code-directory)
+2. [Author and Revision History](#author-and-revision-history)
+3. [Project Structure](#project-structure)
+4. [Root Level Files](#root-level-files)
+5. [Source Code Directory (src/)](#source-code-directory)
    - [Main Agent Files](#main-agent-files)
-   - [RAG Pipeline Files](#rag-pipeline-files)
+   - [Agent Components](#agent-components-srcagentselminster)
+   - [Experimental Agent Implementations](#experimental-agent-implementations-srcexperiments)
+   - [RAG Pipeline Files](#rag-pipeline-files-srcexperiments)
    - [Embeddings Module](#embeddings-module)
    - [Ingestion Module](#ingestion-module)
    - [Inference Module](#inference-module)
    - [Vector Databases Module](#vector-databases-module)
+6. [Experiments Directory](#experiments-directory-srcexperiments)
+7. [Project Dependencies](#project-dependencies-overview)
+8. [Installation and Setup](#installation-quick-reference)
+9. [Quick Start Guide](#quick-start-guide)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -29,42 +37,192 @@
 
 ---
 
+## Author and Revision History
+
+**Author**: Jonathan A. Mitchall
+
+**Current Version**: 1.0  
+**Last Updated**: January 10, 2026
+
+### Revision History
+
+| Date | Version | Changes |
+|------|---------|------|
+| January 10, 2026 | 1.0 | Initial comprehensive documentation |
+
+### Technology Stack & Design Patterns
+
+**Core Technologies**:
+- **vLLM** (≥0.6.0): High-performance LLM inference engine with GPU optimization
+- **LangChain** (0.3.27): LLM application framework for chain orchestration
+- **LangGraph** (≥1.0.1): State-based agent workflow management
+- **LlamaIndex** (≥0.14.12): Advanced document indexing with hierarchical chunking
+- **PyTorch** (≥2.0.0): Deep learning framework for GPU acceleration
+- **HuggingFace Transformers** (≥4.30.0): Pre-trained model loading and inference
+
+**Vector Databases**:
+- **Qdrant** (<1.16): Production-grade vector storage with metadata filtering
+- **FAISS** (1.12.0): Facebook's similarity search library for high-performance retrieval
+- **ChromaDB** (1.1.1): Developer-friendly vector database with SQLite backend
+
+**Design Patterns**:
+- **Reflection Agent Pattern**: Iterative self-critique and refinement loop
+- **Factory Pattern**: `VectorDBFactory` for database abstraction
+- **Abstract Base Classes**: `VectorDBInterface`, `EmbeddingModelInterface`, `BaseDocumentChunker`
+- **Strategy Pattern**: Configurable retrieval strategies (similarity, MMR, hybrid)
+- **State Machine**: LangGraph workflows with typed state management
+- **Dependency Injection**: Constructor-based configuration for agent components
+- **Repository Pattern**: Separation of vector database operations from business logic
+
+**Architectural Patterns**:
+- **RAG (Retrieval-Augmented Generation)**: Context retrieval before LLM generation
+- **Modular Agent Design**: Separated knowledge, prompts, tools, and logic
+- **Pipeline Architecture**: Document ingestion → Chunking → Embedding → Storage → Retrieval
+- **Multi-Backend Support**: Unified interface for multiple vector databases and embedding models
+
+---
+
 ## Project Structure
 
 ```
 vllm-srv/
 ├── Root Configuration Files
-│   ├── main.py                    # Entry point
+│   ├── __init__.py                # Python package marker
 │   ├── check_gpu.py              # GPU health checker
-│   ├── pyproject.toml            # Project dependencies
+│   ├── start_mixtral_server.sh    # vLLM server startup script
+│   ├── pyproject.toml            # Project dependencies (UV)
 │   ├── requirements.txt           # Python dependencies
 │   ├── requirements-cuda.txt      # CUDA-specific dependencies
-│   └── README.md                 # Project documentation (this file)
+│   ├── .gitignore                # Git ignore patterns
+│   ├── .python-version            # Python version specification
+│   ├── README.md                 # Project documentation (this file)
+│   ├── cuda.md                   # CUDA setup documentation
+│   ├── uv.md                     # UV package manager guide
+│   ├── wsl.md                    # WSL setup guide
+│   ├── Groq.md                   # Groq API integration guide
+│   ├── Install Open WebUI.md     # Open WebUI installation guide
+│   └── uv.lock                   # UV dependency lock file
 │
 ├── src/                          # Main source code
-│   ├── lang_graph_reflection_agent.py  # Main production agent
-│   ├── langchain_ingestion_vector_db.py # Document ingestion
-│   ├── refection_logger.py       # Logging utility
-│   ├── agents/                   # Modular agent components
-│   │   └── elminster/            # Elminster D&D agent
-│   ├── embeddings/               # Text embedding utilities
-│   ├── experiments/              # Experimental implementations
-│   ├── ingestion/                # Document loading and chunking
-│   ├── inference/                # LLM inference and models
-│   └── vectordatabases/          # Vector database implementations
+│   ├── __init__.py
+│   ├── lang_graph_reflection_agent.py     # Main production agent
+│   ├── langchain_ingestion_vector_db.py   # Document ingestion pipeline
+│   ├── refection_logger.py                # Centralized logging utility
+│   │
+│   ├── agents/                            # Modular agent components
+│   │   ├── elminster/                     # Elminster D&D expert agent
+│   │   │   ├── knowledge.py               # Source definitions & mappings
+│   │   │   ├── questions.py               # Prompt templates
+│   │   │   ├── thought_process.py         # Core agent logic & state
+│   │   │   ├── prompts/                   # Organized prompt templates
+│   │   │   │   ├── context/               # Context retrieval prompts
+│   │   │   │   ├── question/              # Question answering prompts
+│   │   │   │   ├── reflection/            # Critique prompts
+│   │   │   │   └── revision/              # Question improvement prompts
+│   │   │   └── tools/                     # Agent tools
+│   │   │       └── refresh_question_context_tool.py
+│   │   └── player/                        # Player agent (placeholder, empty)
+│   │
+│   ├── embeddings/                        # Text embedding utilities
+│   │   ├── embedding_manager.py           # High-level embedding manager
+│   │   ├── embedding_model_interace.py    # Abstract base class
+│   │   ├── huggingface_transformer/       # HuggingFace implementations
+│   │   │   ├── langchain_embedding.py     # LangChain compatible
+│   │   │   ├── llama_index_embedding_derived.py  # LlamaIndex compatible
+│   │   │   └── local_model.py             # Direct HF model usage
+│   │   └── vllm/                          # vLLM-based embeddings
+│   │       └── langchain_embedding.py     # vLLM embedding wrapper
+│   │
+│   ├── experiments/                       # Experimental implementations
+│   │   ├── lang_graph_structured_reflection_agent.py    # With Pydantic schemas
+│   │   ├── lang_graph_unstructured_reflection_agent.py  # Without schemas
+│   │   ├── langchain_rag_generator.py     # RAG chain debugging utils
+│   │   └── langchain_rag_retriever.py     # Retrieval formatting utils
+│   │
+│   ├── ingestion/                         # Document loading and chunking
+│   │   ├── base_document_chunker.py       # Abstract chunker base class
+│   │   ├── doc_parser_langchain.py        # LangChain-based chunking
+│   │   ├── doc_parser_llama_index.py      # LlamaIndex-based chunking
+│   │   └── hierarchical_retriever_example.py  # Auto-merging retrieval
+│   │
+│   ├── inference/                         # LLM inference and models
+│   │   └── vllm_srv/                      # vLLM server implementations
+│   │       ├── cleaner.py                 # GPU memory cleanup
+│   │       ├── vllm_process_manager.py    # Subprocess management
+│   │       ├── vllm_memory_helper.py      # Memory diagnostics
+│   │       ├── vllm_basic.py              # Simple usage examples
+│   │       ├── vllm_chat_example.py       # Chat completions example
+│   │       ├── minstral_langchain.py      # Mistral + vLLM + LangChain
+│   │       ├── minstral_llmlite.py        # Mistral + llmlite
+│   │       ├── facebook_langchain.py      # Facebook OPT + LangChain
+│   │       ├── facebook_llmlite.py        # Facebook OPT + llmlite
+│   │       ├── microsoft.py               # Microsoft models (Phi, etc.)
+│   │       ├── LangChain_VLLM.md          # LangChain+vLLM integration guide
+│   │       ├── vllm_model_analysis.md     # Model analysis documentation
+│   │       └── vLLM Platform and Model Support.md  # Platform support info
+│   │
+│   └── vectordatabases/                   # Vector database implementations
+│       ├── vector_db_interface.py         # Abstract base class
+│       ├── vector_db_factory.py           # Factory pattern
+│       ├── retriever_strategies.py        # Pre-configured strategies
+│       ├── mmr_with_scores.py             # MMR comparison utilities
+│       ├── qdrant_vector_db.py            # Qdrant implementation
+│       ├── qdrant_vector_db_commands.py   # Qdrant helper functions
+│       ├── faiss_vector_db.py             # FAISS implementation
+│       ├── fais_vector_db_commands.py     # FAISS helper functions
+│       ├── chroma_vector_db.py            # ChromaDB implementation
+│       ├── chroma_vector_db_commands.py   # ChromaDB helper functions
+│       └── Vector_DB.md                   # Vector DB comparison guide
 │
-├── data/                         # Document collections
-│   ├── all/                      # Consolidated documents
-│   ├── dnd_dm/                   # D&D Dungeon Master Guides
-│   ├── dnd_mm/                   # D&D Monster Manuals
-│   ├── dnd_player/               # D&D Player Handbooks
-│   ├── dnd_raven/                # Van Richten's Ravenloft Guide
-│   └── vtm/                      # Vampire: The Masquerade
+├── data/                                  # Document collections
+│   ├── all/                               # Consolidated (symlinks)
+│   ├── dnd_dm/                            # D&D Dungeon Master's Guide
+│   ├── dnd_mm/                            # D&D Monster Manual
+│   ├── dnd_player/                        # D&D Player's Handbook
+│   ├── dnd_raven/                         # Van Richten's Ravenloft
+│   ├── vtm/                               # Vampire: The Masquerade
+│   └── tmp/                               # Temporary files
 │
-└── models/                       # Downloaded AI models cache
+├── db/                                    # Persisted vector databases
+│   ├── langchain_*_chroma/                # Chroma databases
+│   ├── langchain_*_faiss/                 # FAISS indexes
+│   ├── langchain_*_qdrant/                # Qdrant collections
+│   ├── llamaindex_*_chroma/               # LlamaIndex + Chroma
+│   ├── llamaindex_*_faiss/                # LlamaIndex + FAISS
+│   └── llamaindex_*_qdrant/               # LlamaIndex + Qdrant
+│
+├── models/                                # Downloaded AI models cache
+│   ├── models--BAAI--bge-large-en-v1.5/  # Embedding model
+│   └── models--TheBloke--Mistral-7B-Instruct-v0.2-GPTQ/  # LLM
+│
+├── logs/                                  # Application logs
+│
+└── tests/                                 # Test files (if any)
 ```
 
+### Directory Purpose Summary
+
+| Directory | Purpose | Key Features |
+|-----------|---------|--------------|
+| **src/agents/** | Modular agent implementations | Separates concerns: knowledge, prompts, logic, tools |
+| **src/embeddings/** | Text-to-vector conversion | Supports HuggingFace & vLLM, LangChain & LlamaIndex |
+| **src/experiments/** | Prototypes & alternatives | Testing ground for new features, extensive debugging |
+| **src/ingestion/** | Document loading & chunking | LangChain & LlamaIndex parsers, hierarchical support |
+| **src/inference/** | LLM inference engines | vLLM integration, multiple model families |
+| **src/vectordatabases/** | Semantic search storage | Qdrant, FAISS, Chroma with factory pattern |
+| **data/** | Source documents | D&D rulebooks, VTM books, organized by collection |
+| **db/** | Vector database persistence | Separate dirs per collection & DB type |
+| **models/** | Cached AI models | HuggingFace automatic download cache |
+| **logs/** | Runtime logs | Centralized logging output |
+
 ---
+
+## Root Level Files
+
+### __init__.py
+**Purpose**: Python package marker file.
+- Makes the root directory importable as a Python package
+- Empty file for package structure
 
 ### check_gpu.py
 **Purpose**: GPU health verification script that validates GPU availability and performance before running the reflection agent.
@@ -83,6 +241,87 @@ vllm-srv/
 - ❌ Red X for critical failures
 
 **Usage**: Run before starting the agent: `python check_gpu.py`
+
+---
+
+### start_mixtral_server.sh
+**Purpose**: Bash script with pre-configured vLLM server startup commands for Mixtral 8x7B.
+
+**Contents**:
+- Basic Mixtral server configuration (recommended for 16GB GPU)
+- Memory-optimized configuration (for limited VRAM)
+- Quantized configuration (4-bit for 8GB GPU)
+- CPU fallback configuration
+
+**Example Commands**:
+```bash
+# Basic server (16GB GPU)
+vllm serve mistralai/Mixtral-8x7B-Instruct-v0.1 \
+  --host 127.0.0.1 --port 8000 \
+  --gpu-memory-utilization 0.9 --dtype float16
+
+# Memory-optimized (12GB GPU)
+vllm serve mistralai/Mixtral-8x7B-Instruct-v0.1 \
+  --host 127.0.0.1 --port 8000 \
+  --gpu-memory-utilization 0.85 \
+  --max-model-len 2048 --dtype float16 --kv-cache-dtype fp8
+```
+
+**Usage**: Reference for vLLM server startup options, copy commands as needed.
+
+---
+
+### Configuration Files
+
+#### pyproject.toml
+**Purpose**: UV package manager configuration and project metadata.
+- Defines project dependencies
+- Specifies Python version requirements
+- Configures build system
+
+#### requirements.txt
+**Purpose**: Python package dependencies for standard (CPU) installation.
+- Core dependencies for CPU-only environments
+- Compatible with pip and uv
+
+#### requirements-cuda.txt
+**Purpose**: Additional dependencies for CUDA GPU support.
+- GPU-accelerated packages (torch with CUDA, faiss-gpu, etc.)
+- Install after requirements.txt for GPU environments
+
+---
+
+### Documentation Files
+
+#### cuda.md
+**Purpose**: CUDA setup and troubleshooting guide.
+- CUDA installation instructions
+- Driver compatibility information
+- GPU configuration tips
+
+#### uv.md
+**Purpose**: UV package manager usage guide.
+- UV installation instructions
+- Common UV commands
+- Dependency management workflows
+
+#### wsl.md
+**Purpose**: Windows Subsystem for Linux setup guide.
+- WSL2 installation for Windows users
+- GPU passthrough configuration
+- Development environment setup
+
+#### Groq.md
+**Purpose**: Groq API integration documentation.
+- Groq API setup and configuration
+- Using Groq's fast inference service as alternative to local vLLM
+- API key management
+
+#### Install Open WebUI.md
+**Purpose**: Open WebUI installation and configuration guide.
+- Installing Open WebUI for web-based chat interface
+- Connecting Open WebUI to local vLLM server
+- Configuration and customization options
 
 ---
 
@@ -212,7 +451,8 @@ __init__(self, brain, root_path="/home/jmitchall/vllm-srv", **kwargs)
 
 ### Experimental Agent Implementations (src/experiments/)
 
-#### lang_graph_structured_reflection_agent.py
+#### experiments/lang_graph_structured_reflection_agent.py
+**Purpose**: Experimental reflection agent with Pydantic output validation schemas.
 
 **Key Classes**:
 
@@ -240,7 +480,7 @@ Validates LLM output for answer evaluation:
 - `critique`: Evaluation text
 - `clarity`: Float (0.0-1.0) rating for comprehensibility
 - `succinct`: Float (0.0-1.0) rating for brevity
-- `readability`: Float (0.0-1.0) rating (0=graduate level, 1=5th grade)
+- `readabilty`: Float (0.0-1.0) rating (0=graduate level, 1=5th grade)
 - `revision_needed`: Boolean for refinement decision
 - `response`: Nested QuestionResponseSchema
 
@@ -416,8 +656,10 @@ Same as in langchain_rag_generator.py - creates retriever instances.
 
 ---
 
-#### langchain_ingestion_vector_db.py
+#### src/langchain_ingestion_vector_db.py
 **Purpose**: End-to-end document ingestion pipeline for vector database creation and population.
+
+**Location**: Root of src/ directory (not in a subdirectory)
 
 **Functions**:
 
@@ -824,7 +1066,7 @@ context_summary: str  # < 500 char summary
 critique: str         # Evaluation text
 clarity: float        # 0.0-1.0 comprehensibility
 succinct: float       # 0.0-1.0 brevity
-readability: float    # 0.0-1.0 (0=graduate, 1=5th grade)
+readabilty: float     # 0.0-1.0 (0=graduate, 1=5th grade)
 revision_needed: bool # Refinement flag
 response: QuestionResponseSchema  # Original answer
 ```
@@ -2014,19 +2256,6 @@ Comparison guide for three supported vector databases:
 
 ---
 
-## Configuration Files
-
-### pyproject.toml
-Project metadata and dependency management using UV package manager.
-
-### requirements.txt
-Python package dependencies for CPU environments.
-
-### requirements-cuda.txt
-Additional dependencies for CUDA GPU support.
-
----
-
 ## Data Directory Structure
 
 ### Collection Types
@@ -2074,11 +2303,12 @@ db.save()
 
 ### 4. Query with Agent
 ```python
-from src.lang_graph_structured_reflection_agent import ReflectionAgent
+from src.lang_graph_reflection_agent import agent_context_node, agent_generation_node, agent_reflection_node
+from src.agents.elminster.thought_process import ThoughtProcessAgent
 from src.inference.vllm_srv.minstral_langchain import create_vllm_chat_model
 
 llm = create_vllm_chat_model()
-agent = ReflectionAgent(brain=llm, DATABASE_TYPE="qdrant", collection_name="dnd_mm")
+agent = ThoughtProcessAgent(brain=llm, root_path="/home/jmitchall/vllm-srv", DATABASE_TYPE="qdrant")
 question = "What is a Rogue?"
 state = agent.get_initial_state(question)
 ```
@@ -2087,8 +2317,8 @@ state = agent.get_initial_state(question)
 
 ## System Requirements
 
-- **GPU**: NVIDIA RTX 5080 (16GB VRAM recommended)
-- **CPU**: Multi-core processor (8+ cores beneficial)
+- **GPU**: NVIDIA GPU with 16GB+ VRAM (e.g., RTX 4080, RTX 4090, RTX 5080)
+- **CPU**: Multi-core processor (8+ cores recommended)
 - **RAM**: 32GB+ system RAM
 - **Storage**: 100GB+ for models and vector databases
 - **OS**: Linux/WSL2 (Windows via WSL)
@@ -2134,8 +2364,3 @@ This project uses:
 - **Qdrant**: AGPL-3.0 (with commercial licensing available)
 
 See respective projects for full terms.
-
----
-
-**Last Updated**: January 2026
-**Documentation Version**: 1.0
