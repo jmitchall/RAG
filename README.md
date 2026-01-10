@@ -42,9 +42,13 @@ vllm-srv/
 │   └── README.md                 # Project documentation (this file)
 │
 ├── src/                          # Main source code
-│   ├── Reflection Agent Files    # Core AI agent implementations
-│   ├── RAG Generator Files       # Question answering pipeline
+│   ├── lang_graph_reflection_agent.py  # Main production agent
+│   ├── langchain_ingestion_vector_db.py # Document ingestion
+│   ├── refection_logger.py       # Logging utility
+│   ├── agents/                   # Modular agent components
+│   │   └── elminster/            # Elminster D&D agent
 │   ├── embeddings/               # Text embedding utilities
+│   ├── experiments/              # Experimental implementations
 │   ├── ingestion/                # Document loading and chunking
 │   ├── inference/                # LLM inference and models
 │   └── vectordatabases/          # Vector database implementations
@@ -86,8 +90,129 @@ vllm-srv/
 
 ### Main Agent Files
 
-#### lang_graph_langchain_tools_reflection_agent.py
-**Purpose**: Advanced reflection agent using LangChain tools for structured question-answering with iterative refinement.
+#### src/lang_graph_reflection_agent.py
+**Purpose**: Production-ready reflection agent with modular components for structured question-answering with iterative refinement.
+
+**Overview**: This is the main entry point for the Elminster agent system, which orchestrates a LangGraph workflow with specialized nodes for context retrieval, question improvement, answer generation, and reflection.
+
+**Node Functions**:
+
+##### `agent_context_node(state: ReflectionAgentState)`
+Retrieves context from vector databases based on the current question.
+- Invokes context chain with question, sources, and database type
+- Updates agent's context for answer generation
+- Handles errors gracefully with fallback messages
+
+##### `agent_improve_question_node(state: ReflectionAgentState)`
+Refines the question based on critique feedback.
+- Uses revision chain to improve question clarity
+- Incorporates critique to address identified issues
+- Updates state with improved question for re-processing
+
+##### `agent_generation_node(state: ReflectionAgentState)`
+Generates expert answers using retrieved context.
+- Creates response using generation chain
+- Validates output format and required fields
+- Returns structured answer with sources and context summary
+
+##### `agent_reflection_node(state: ReflectionAgentState)`
+Evaluates generated answers for quality.
+- Assesses clarity, succinctness, and readability
+- Determines if revision is needed
+- Provides specific critique for improvements
+
+**Dependencies**:
+- `agents.elminster.thought_process`: ThoughtProcessAgent, ReflectionAgentState
+- `agents.elminster.knowledge`: Source definitions and collection mappings
+- `agents.elminster.prompts`: Prompt templates for each chain
+- `inference.vllm_srv.cleaner`: GPU memory management
+- `langgraph.graph`: Workflow orchestration
+
+---
+
+### Agent Components (src/agents/elminster/)
+
+#### knowledge.py
+**Purpose**: Defines source collections and their mappings for D&D knowledge bases.
+
+**Variables**:
+- `elminster_sources`: String template listing all available D&D sources
+  - Ensures LLM uses all 4 sources: DMG, Monster Manual, Player's Handbook, Van Richten's
+  - Includes critical spelling corrections
+
+- `collection_names`: Dictionary mapping source names to database collection IDs
+  ```python
+  {
+    "Dungeon Master's Guide...": "dnd_dm",
+    "Monster Manual...": "dnd_mm",
+    "Player's Handbook...": "dnd_player",
+    "Horror Adventures - Van Richten's...": "dnd_raven",
+    "Vampire-the-Masquerade": "vtm"
+  }
+  ```
+
+#### questions.py
+**Purpose**: Contains prompt templates for question answering and revision.
+
+**Templates**:
+- `dm_question_expertise`: Expert D&D Game Master prompt for answering questions
+  - Includes context placeholder
+  - Requires source citation
+  - Requests context summarization
+
+- `revise_question_prompt`: Template for improving questions based on critique
+  - Takes original question and critique
+  - Outputs single revised question
+  - Focuses on clarity and specificity
+
+#### thought_process.py
+**Purpose**: Core agent logic and state management.
+
+**Class**: `ThoughtProcessAgent` (ABC)
+
+**Constructor**:
+```python
+__init__(self, brain, root_path="/home/jmitchall/vllm-srv", **kwargs)
+```
+- `brain`: LLM instance (e.g., Mistral-7B)
+- `root_path`: Base directory for vector databases
+- Initializes 4 chains: generation, reflection, context, revision
+
+**State Class**: `ReflectionAgentState` (TypedDict)
+- `messages`: Conversation history
+- `agent_instance`: Reference to agent
+- `continue_refining`: Iteration control flag
+- `question`: Current question text
+- `context`: Retrieved context string
+- `critique`: Evaluation feedback
+
+**Key Methods**:
+- `get_initial_state(question)`: Creates starting state for workflow
+- `handle_tool_calls(message, tools)`: Processes LLM tool invocations
+- `get_generation_chain()`: Creates answer generation prompt chain
+- `get_reflection_chain()`: Creates critique/evaluation chain
+- `get_context_chain()`: Creates context retrieval chain
+- `get_revision_chain()`: Creates question improvement chain
+
+#### tools/refresh_question_context_tool.py
+**Purpose**: LangChain tool wrapper for retrieving context from vector databases.
+
+**Classes**:
+- `RefreshQuestionContextInput`: Pydantic schema for tool inputs
+- `RefreshQuestionContextTool`: LangChain BaseTool implementation
+
+**Methods**:
+- `get_retriever(collection_name, dbtype, root_path)`: Creates retriever instance
+- `get_retriever_and_vector_stores()`: Loads vector database client
+
+**Supported Collections**:
+- dnd_dm, dnd_mm, dnd_player, dnd_raven, vtm
+
+---
+
+### Experimental Agent Implementations (src/experiments/)
+
+#### lang_graph_structured_reflection_agent.py
 
 **Key Classes**:
 
@@ -140,44 +265,7 @@ __init__(self, brain, root_path="/home/jmitchall/vllm-srv", **kwargs)
 - `extract_json_response_output(raw_output)`: Cleans LLM JSON output for answers
 - `extract_json_reflection_output(raw_output)`: Cleans LLM JSON output for critiques
 
-**Dependencies**:
-- `inference.vllm_srv.cleaner`: GPU memory management
-- `vectordatabases.refresh_question_context_tool`: Context retrieval
-- `langchain_core`: Message handling and prompts
 
----
-
-#### lang_graph_manual_tools_reflection_agent.py
-**Purpose**: Reflection agent with manually-invoked tool calls (as opposed to automatic tool binding).
-
-**Key Classes**:
-
-#### `ReflectionAgent` (ABC)
-Agent with manual tool invocation capability.
-
-**Constructor**:
-```python
-__init__(self, brain, embedding_model="BAAI/bge-large-en-v1.5", 
-         root_path="/home/jmitchall/vllm-srv", similarity_threshold=0.7, **kwargs)
-```
-
-**Key Methods**:
-- `manually_call_tools(tool_calls)`: Executes tool calls passed as dictionaries
-  - Expected format: `[{"name": "method_name", "args": {...}}]`
-  - Dynamically calls instance methods matching tool names
-
-- `refresh_question_context(question, sources, db_type)`: Retrieves context for question
-  - Supports sources: D&D materials, Vampire: The Masquerade
-  - Works with vector DB types: "qdrant", "faiss", "chroma"
-  - Returns context string for question answering
-
-**Dependencies**:
-- `embeddings.huggingface_transformer.langchain_embedding`: HuggingFace embeddings
-- Same schema classes as langchain_tools version
-
----
-
-#### lang_graph_structured_reflection_agent.py
 **Purpose**: Reflection agent with structured output formatting and retriever integration.
 
 **Key Classes**:
@@ -214,8 +302,8 @@ __init__(self, brain, embedding_model="BAAI/bge-large-en-v1.5",
 
 ---
 
-#### lang_graph_unstructured_reflection_agent.py
-**Purpose**: Lightweight reflection agent without structured output schemas, for simpler use cases.
+#### experiments/lang_graph_unstructured_reflection_agent.py
+**Purpose**: Experimental lightweight reflection agent without Pydantic validation schemas, for simpler use cases.
 
 **Key Classes**:
 
@@ -243,10 +331,10 @@ __init__(self, brain, embedding_model="BAAI/bge-large-en-v1.5",
 
 ---
 
-### RAG Pipeline Files
+### RAG Pipeline Files (src/experiments/)
 
-#### langchain_rag_generator.py
-**Purpose**: Utilities for building and inspecting RAG chains with detailed debugging output.
+#### experiments/langchain_rag_generator.py
+**Purpose**: Experimental utilities for building and inspecting RAG chains with detailed debugging output.
 
 **Functions**:
 
@@ -296,8 +384,8 @@ retriever, client = get_retriever_and_vector_stores(
 
 ---
 
-#### langchain_rag_retriever.py
-**Purpose**: Utilities for retrieving and formatting documents from vector stores.
+#### experiments/langchain_rag_retriever.py
+**Purpose**: Experimental utilities for retrieving and formatting documents from vector stores.
 
 **Functions**:
 
@@ -483,6 +571,78 @@ __init__(self, model_name: str, torch_dtype: str = "float16")
 
 ---
 
+#### src/embeddings/huggingface_transformer/llama_index_embedding_derived.py
+**Purpose**: HuggingFace embedding wrapper for LlamaIndex compatibility.
+
+**Class**: `LlamaIndexHuggingFaceOfflineEmbeddings` (extends HuggingFaceEmbedding)
+
+**Constructor**:
+```python
+__init__(self, model_name: str = "BAAI/bge-small-en-v1.5",
+         cache_folder: Optional[str] = "./models", **kwargs)
+```
+
+**Parameters**:
+- `model_name`: HuggingFace model ID
+- `cache_folder`: Local directory for model cache (enables offline use)
+- `**kwargs`: Additional args for base class (device, max_length, normalize, etc.)
+
+**Properties**:
+- `get_tokenizer`: Returns tokenizer from model
+  - Tries multiple access patterns for compatibility
+  - Falls back through: `tokenizer`, `_tokenizer`, `_model.tokenizer`
+
+**Use Case**: When using LlamaIndex-based document chunking and retrieval pipelines.
+
+**Key Feature**: Designed for offline operation with local model caching.
+
+---
+
+#### src/embeddings/vllm/langchain_embedding.py
+**Purpose**: vLLM-based embeddings as alternative to HuggingFace transformers.
+
+**Class**: `VLLMOfflineEmbeddings` (extends LangChain Embeddings)
+
+**Constructor**:
+```python
+__init__(self, model_name: str,
+         tensor_parallel_size: int = 1,
+         gpu_memory_utilization: float = 0.9,
+         device: str = "cuda")
+```
+
+**Parameters**:
+- `model_name`: vLLM-compatible embedding model
+- `tensor_parallel_size`: Number of GPUs for model parallelization
+  - Default: 1 (single GPU)
+  - Set to 2+ to split large embedding models across multiple GPUs
+  
+- `gpu_memory_utilization`: GPU memory fraction (0.0-1.0)
+  - 0.9: Use 90% of GPU memory (default)
+  - 0.7: Conservative, leaves room for other tasks
+  - 0.5: Very conservative, slower but more stable
+
+- `device`: "cuda" for GPU or "cpu" for CPU
+  - Auto-fallback to CPU if CUDA unavailable
+
+**GPU Support**:
+- Automatic CUDA detection via PyTorch
+- Warns if GPU requested but unavailable
+- Prints device status on initialization
+
+**Advantages over HuggingFace**:
+- Better performance for large embedding models
+- Multi-GPU support out of the box
+- Optimized for batch processing
+
+**Supported Models**:
+- "intfloat/e5-mistral-7b-instruct" (512 tokens)
+- "BAAI/bge-base-en-v1.5" (512 tokens)
+- "BAAI/bge-large-en-v1.5" (1024 tokens)
+- "intfloat/e5-large-v2" (512 tokens)
+
+---
+
 #### src/embeddings/huggingface_transformer/local_model.py
 **Purpose**: Direct HuggingFace model implementation of EmbeddingModelInterface.
 
@@ -622,6 +782,227 @@ Converts LlamaIndex hierarchical nodes to LangChain format.
 
 ---
 
+## Experiments Directory (src/experiments/)
+
+The experiments directory contains prototype implementations, alternative approaches, and testing utilities that explore different design patterns for the reflection agent and RAG pipeline.
+
+### Overview
+
+**Purpose**: Sandbox for testing new features, alternative implementations, and debugging utilities before promoting to production.
+
+**Key Characteristics**:
+- Contains standalone, self-contained implementations
+- May duplicate functionality with different approaches
+- Not imported by production code
+- Useful for benchmarking and comparison
+
+---
+
+### Experimental Agent Variants
+
+#### experiments/lang_graph_structured_reflection_agent.py
+**Purpose**: Reflection agent prototype with Pydantic output validation schemas.
+
+**Key Features**:
+- **Structured Output**: Uses QuestionResponseSchema and CritiqueOfAnswerSchema
+- **Field Validation**: Pydantic models enforce type checking and validation
+- **Error Detection**: Validates LLM outputs before processing
+- **Safe Parsing**: `validate_dict_safe()` methods prevent runtime errors
+
+**Schemas**:
+
+##### `QuestionResponseSchema`
+```python
+answer: str           # Expert response
+question: str         # Original question
+source: str          # Document reference
+context_summary: str  # < 500 char summary
+```
+
+##### `CritiqueOfAnswerSchema`
+```python
+critique: str         # Evaluation text
+clarity: float        # 0.0-1.0 comprehensibility
+succinct: float       # 0.0-1.0 brevity
+readability: float    # 0.0-1.0 (0=graduate, 1=5th grade)
+revision_needed: bool # Refinement flag
+response: QuestionResponseSchema  # Original answer
+```
+
+**Use Case**: When LLM output consistency is critical and you need strong validation.
+
+**Trade-offs**:
+- ✅ Catches malformed outputs early
+- ✅ Clear error messages
+- ❌ May reject valid but non-conforming outputs
+- ❌ More rigid, less adaptable
+
+---
+
+#### experiments/lang_graph_unstructured_reflection_agent.py
+**Purpose**: Lightweight reflection agent without Pydantic validation for flexibility.
+
+**Key Features**:
+- **No Schema Validation**: Accepts any LLM output format
+- **Flexible Parsing**: Handles variations in output structure
+- **Faster Prototyping**: No need to define schemas upfront
+- **Better for Experimentation**: Adapts to different LLMs easily
+
+**Differences from Structured Version**:
+- No QuestionResponseSchema or CritiqueOfAnswerSchema
+- Direct string parsing from LLM outputs
+- More forgiving of format variations
+- Better for testing new models
+
+**Use Case**: Rapid prototyping, testing new LLMs, when output format is still evolving.
+
+**Trade-offs**:
+- ✅ More flexible and adaptable
+- ✅ Works with various LLM output styles
+- ❌ No validation safety net
+- ❌ Harder to debug parsing issues
+
+---
+
+### Experimental RAG Utilities
+
+#### experiments/langchain_rag_generator.py
+**Purpose**: RAG chain building utilities with extensive debugging instrumentation.
+
+**Key Functions**:
+
+##### `inspect_chat_prompt_value(prompt_value)`
+**Purpose**: Debug ChatPromptTemplate message structures before LLM invocation.
+
+**Output**:
+```
+================================================================================
+📋 INSPECTING ChatPromptValue OBJECT (INPUT TO LLM):
+================================================================================
+🔍 Type: ChatPromptValue
+   Class: ChatPromptValue
+
+💬 Messages (3 total):
+   Message #1:
+   - Type: SystemMessage
+   - Content: You are an expert...
+```
+
+**Use Case**: Understanding what's actually sent to the LLM, debugging prompt issues.
+
+##### `inspect_llm_input(llm_input, chain_name="")`
+**Purpose**: Inspect input to LLM node in chain.
+
+**Features**:
+- Shows input type and class
+- Displays content length
+- Optional chain label for tracking
+- Returns input unchanged (for chain continuity)
+
+##### `inspect_llm_output(llm_output, chain_name="")`
+**Purpose**: Inspect output from LLM node in chain.
+
+**Features**:
+- Shows output type and class
+- Displays generated content
+- Optional chain label
+- Returns output unchanged
+
+**Use Case**: Debugging RAG chains, understanding data flow, logging.
+
+**Chain Integration**:
+```python
+chain = (
+    prompt 
+    | RunnableLambda(inspect_chat_prompt_value)
+    | llm
+    | RunnableLambda(inspect_llm_output)
+)
+```
+
+---
+
+#### experiments/langchain_rag_retriever.py
+**Purpose**: Document retrieval and formatting utilities with metadata display.
+
+**Key Functions**:
+
+##### `dict_to_str(d: dict) -> str`
+Converts dictionary to formatted string for display.
+
+**Use Case**: Formatting intermediate chain results for logging.
+
+##### `format_list_documents_as_string(results)`
+Advanced document formatter with rich metadata display.
+
+**Sample Output**:
+```
+Metadata Source/File path: Monster Manual A.pdf
+page: 42
+format: pdf
+Total Pages in Source/File: 150
+Similarity Score: 0.87
+================================================================================
+[Document content...]
+================================================================================
+```
+
+**Metadata Displayed**:
+- Source file path
+- Page number
+- File format
+- Total pages
+- Similarity score
+
+**Use Case**: Understanding retrieval quality, debugging context selection.
+
+---
+
+### Comparison with Production Code
+
+| Feature | Production (src/) | Experiments (src/experiments/) |
+|---------|------------------|--------------------------------|
+| **Purpose** | Production-ready agent | Prototypes and alternatives |
+| **Validation** | Balanced validation | Varies by implementation |
+| **Stability** | Stable, tested | May have experimental features |
+| **Documentation** | Minimal comments | Extensive explanatory comments |
+| **Performance** | Optimized | May prioritize clarity over speed |
+| **Imports** | Used by other modules | Standalone, self-contained |
+| **Maintenance** | Actively maintained | May become outdated |
+
+---
+
+### When to Use Experiments
+
+**Use Experiments When**:
+- Testing new prompt templates
+- Evaluating different validation strategies
+- Benchmarking alternative implementations
+- Learning how the system works
+- Debugging complex issues
+- Prototyping new features
+
+**Use Production When**:
+- Building actual applications
+- Need stability and performance
+- Integrating with other systems
+- Deploying to users
+
+---
+
+### Evolution Path
+
+Successful experimental features may be promoted to production:
+
+1. **Prototype** in `experiments/` with extensive debugging
+2. **Test** with various inputs and edge cases
+3. **Optimize** for performance and reliability
+4. **Simplify** by removing debug instrumentation
+5. **Promote** to `src/` as production code
+6. **Maintain** experimental version for reference
+
+---
+
 ## Inference Module
 
 #### src/inference/vllm_srv/vllm_process_manager.py
@@ -690,6 +1071,139 @@ Returns current GPU memory information.
 - Used memory
 - Free memory
 - Temperature
+
+---
+
+#### src/inference/vllm_srv/vllm_memory_helper.py
+**Purpose**: Comprehensive GPU memory management and diagnostics for vLLM.
+
+**Functions**:
+
+##### `check_gpu_memory() -> dict`
+Checks current GPU memory usage via nvidia-smi.
+- Returns: `{'total_mb', 'used_mb', 'free_mb', 'free_ratio', 'used_ratio'}`
+- Timeout: 10 seconds
+- Handles errors gracefully
+
+##### `force_memory_cleanup()`
+Performs comprehensive memory cleanup.
+- Clears Python garbage collector
+- Clears PyTorch CUDA cache if available
+- Synchronizes CUDA operations
+- Forces system sync
+
+##### `test_vllm_isolated() -> bool`
+Tests vLLM in isolated subprocess.
+- Uses VLLMProcessManager
+- Configures conservative memory settings (50% utilization)
+- Returns success/failure status
+
+##### `kill_gpu_processes()`
+Helps identify GPU processes that may need termination.
+- Lists Python/vLLM processes using GPU
+- Provides PIDs for manual termination
+
+**Use Case**: Diagnosing and resolving GPU memory issues before/after vLLM runs.
+
+---
+
+#### src/inference/vllm_srv/vllm_basic.py
+**Purpose**: Simple example demonstrating basic vLLM text generation.
+
+**Example Code**:
+```python
+from vllm import LLM, SamplingParams
+
+llm = LLM(model="facebook/opt-125m")
+sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
+outputs = llm.generate(["Hello, my name is"], sampling_params)
+```
+
+**Key Components**:
+- `LLM`: Main vLLM instance for inference
+- `SamplingParams`: Controls generation (temperature, top_p, top_k, etc.)
+- `generate()`: Produces text completions from prompts
+
+**Sample Prompts**:
+- "Hello, my name is"
+- "The president of the United States is"
+- "The capital of France is"
+- "The future of AI is"
+
+**Use Case**: Testing vLLM installation and basic functionality.
+
+---
+
+#### src/inference/vllm_srv/vllm_chat_example.py
+**Purpose**: Example of using vLLM for chat-style completions.
+
+**Features**:
+- Multi-turn conversation handling
+- System/user/assistant message formatting
+- Chat template application
+
+---
+
+#### src/inference/vllm_srv/facebook_langchain.py
+**Purpose**: Facebook OPT model integration with LangChain wrapper.
+
+**Functions**:
+
+##### `get_langchain_vllm_facebook_opt_125m(download_dir=None) -> VLLM`
+Creates LangChain wrapper for OPT-125M model.
+- **Model**: facebook/opt-125m (125 million parameters)
+- **Memory**: ~500MB GPU memory
+- **Speed**: Very fast, suitable for testing
+- **Quality**: Basic, best for simple completions
+
+**Parameters**:
+- `download_dir`: Custom directory for model cache (default: None uses HF cache)
+
+**Sampling Configuration**:
+- `sampling_params_random`: Creative mode (temperature=0.3, top_k=50)
+- `sampling_params_deterministic`: Reproducible mode (temperature=0.0, seed=42)
+
+##### `convert_chat_prompt_to_facebook_prompt_value(chat_prompt_value)`
+Converts ChatPromptValue to plain string for BaseLLM compatibility.
+- Concatenates all message contents
+- Removes role labels (System:, Human:, etc.)
+- Preserves formatting/newlines
+
+**Use Case**: Testing LangChain integration before using larger models.
+
+---
+
+#### src/inference/vllm_srv/microsoft.py
+**Purpose**: Microsoft model integrations (Phi, etc.).
+
+**Potential Models**:
+- Microsoft Phi-2 (2.7B parameters)
+- Microsoft Phi-3 (3.8B parameters)
+
+---
+
+#### src/inference/vllm_srv/minstral_llmlite.py
+**Purpose**: Mistral model integration using llmlite library.
+
+**Alternative Backend**: Uses llmlite instead of vLLM for comparison.
+
+**Advantages**:
+- More low-level control
+- Different optimization strategies
+- May work better for certain hardware configurations
+
+**Disadvantages**:
+- Slower than vLLM
+- More complex setup
+
+---
+
+#### src/inference/vllm_srv/facebook_llmlite.py
+**Purpose**: Facebook OPT models using llmlite backend.
+
+**Comparison with vLLM**:
+- **llmlite**: More control, slower setup, manual optimization
+- **vLLM**: Optimized performance, easier integration, automatic batching
 
 ---
 
@@ -811,6 +1325,84 @@ __init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None,
 
 ---
 
+#### src/vectordatabases/chroma_vector_db.py
+**Purpose**: Full ChromaDB implementation with GPU optimization.
+
+**Class**: `ChromaVectorDB` (extends VectorDBInterface)
+
+**Constructor**:
+```python
+__init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None,
+         collection_name: str = None, use_gpu: bool = True, **kwargs)
+```
+
+**Features**:
+- **SQLite Backend**: Persistent storage via Chroma's SQLite database
+- **GPU Optimization**: Tunes HNSW parameters based on GPU availability
+- **Collection Management**: Multiple collections in single database
+- **Metadata Support**: Rich metadata filtering capabilities
+
+**GPU-Optimized Settings**:
+When GPU available:
+- `hnsw:construction_ef`: 200 (vs 100 on CPU)
+- `hnsw:M`: 48 (vs 16 on CPU)
+- `hnsw:search_ef`: 100 (vs 50 on CPU)
+
+**Methods**:
+
+##### `get_list_of_collections() -> List[str]`
+Returns all collection names in database.
+
+##### `check_gpu_availability()`
+Detects GPU and configures optimization parameters.
+- Prints GPU name and memory
+- Enables GPU acceleration for preprocessing
+- Falls back to CPU if unavailable
+
+##### `init_chroma_db_client(persist_path)`
+Initializes ChromaDB client with persistent storage.
+- Creates Chroma directory
+- Configures SQLite backend
+- Sets up connection pooling
+
+##### `_setup_collection()`
+Creates or retrieves collection with optimized metadata.
+- Configures HNSW index parameters
+- Sets distance metric (cosine)
+- Stores GPU optimization flag
+
+##### `get_max_document_length() -> int`
+Returns length of longest document in collection.
+
+**Storage Location**: `{persist_path}_chroma/`
+
+**Use Case**: Developer-friendly vector DB with good LangChain integration.
+
+---
+
+#### src/vectordatabases/chroma_vector_db_commands.py
+**Purpose**: Helper functions for ChromaDB operations.
+
+**Functions**:
+
+##### `get_chroma_vectorstore(collection_name, persist_path, embeddings)`
+Creates or loads ChromaDB vector store.
+- Returns: Chroma LangChain wrapper
+- Handles collection creation if needed
+
+##### `get_chroma_retriever(vectorstore, k=5)`
+Creates LangChain retriever from Chroma store.
+- Configures similarity search
+- Sets result count
+
+##### `chroma_create_from_documents(collection_name, documents, persist_path, embeddings)`
+Populates ChromaDB from document list.
+- Creates collection
+- Adds documents with embeddings
+- Persists to disk
+
+---
+
 #### src/vectordatabases/retriever_strategies.py
 **Purpose**: Configurable retrieval strategies for better search quality.
 
@@ -843,34 +1435,6 @@ __init__(self, embedding_dim: int = 0, persist_path: Optional[str] = None,
 
 **Function**: `get_retrieval_strategy(strategy_name) -> RetrievalConfig`
 Retrieves pre-configured strategy by name.
-
----
-
-#### src/vectordatabases/refresh_question_context_tool.py
-**Purpose**: LangChain tool wrapper for refreshing question context from vector database.
-
-**Classes**:
-
-#### `RefreshQuestionContextInput` (Pydantic)
-Input schema for context refresh tool.
-- `question`: User's query
-- `sources`: List of collection names
-- `db_type`: "qdrant", "faiss", or "chroma"
-- `root_path`: Base path for vector databases
-
-#### `RefreshQuestionContextTool` (extends BaseTool)
-LangChain-compatible tool for agent use.
-
-**Methods**:
-- `get_retriever(collection_name, dbtype, root_path)`: Creates retriever
-- `get_retriever_and_vector_stores()`: Loads vector database
-
-**Collections Supported**:
-- "dnd_dm": Dungeon Master's Guide
-- "dnd_mm": Monster Manual
-- "dnd_player": Player's Handbook
-- "dnd_raven": Van Richten's Ravenloft Guide
-- "vtm": Vampire: The Masquerade
 
 ---
 
