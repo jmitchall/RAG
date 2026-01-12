@@ -4,7 +4,7 @@ from agents.elminster.prompts.context.langchain_context_prompt import  get_conte
 from agents.elminster.prompts.question.langchain_question_prompt import get_answer_prompt
 from agents.elminster.prompts.reflection.langchain_critique_prompt import  get_reflection_prompt
 from agents.elminster.prompts.revision.langchain_revision_prompt import get_revision_prompt
-from agents.elminster.questions import dm_question_expertise, reflect_on_answer, revise_question_prompt
+from agents.elminster.questions import dm_question_expertise, reflect_on_answer, revise_question_prompt, dm_question_task_description
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import BaseTool
@@ -99,7 +99,7 @@ class ThoughtProcessAgent(ABC):
             lambda x: self.handle_tool_calls(x, tools))
 
     def get_generation_chain(self):
-        answer_generation_prompt = get_answer_prompt(dm_question_expertise)
+        answer_generation_prompt = get_answer_prompt(dm_question_expertise + dm_question_task_description)
 
         return answer_generation_prompt | RunnableLambda(
             lambda x: self.llm.unbind_tools(x)) | self.llm

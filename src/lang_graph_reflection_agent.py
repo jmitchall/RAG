@@ -2,6 +2,7 @@ import os
 import traceback
 from agents.elminster.thought_process import ThoughtProcessAgent, ReflectionAgentState
 from agents.elminster.knowledge import elminster_sources
+from agents.elminster.questions import dm_context_expertise
 from agents.elminster.prompts.context.langchain_context_prompt import get_tool_input_request
 from agents.elminster.prompts.question.langchain_question_prompt import QuestionResponseSchema,  extract_json_response_output
 from agents.elminster.prompts.reflection.langchain_critique_prompt import CritiqueOfAnswerSchema, extract_json_reflection_output
@@ -38,7 +39,7 @@ def agent_context_node(state: ReflectionAgentState) -> ReflectionAgentState:
 
         generated_response_obj = agent_components.context_chain.invoke(
             {
-                "input": get_tool_input_request(question=question, root_path=agent_components.root_path,
+                "input": dm_context_expertise+"\n\n"+ get_tool_input_request(question=question, root_path=agent_components.root_path,
                                                 db_type="qdrant", critique=critique, sources=elminster_sources),
                 "messages": last_message
             }
