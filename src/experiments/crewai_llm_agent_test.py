@@ -389,15 +389,15 @@ if __name__ == "__main__":
     try:
         logger.info("🚀 Starting Reflection Agent...")
 
-        # Set dummy OpenAI key to bypass CrewAI's validation
-        # CrewAI checks for this key even when using custom LLMs
-        import os
-        if os.environ["OPENAI_API"]:
-            os.environ["OPENAI_API_KEY"] = os.environ["OPENAI_API"]
-        if "OPENAI_API_KEY" not in os.environ:
-            raise ValueError("Please set the OPENAI_API_KEY environment variable.")
-        if not os.environ["OPENAI_API_KEY"]:
-            raise ValueError("OPENAI_API_KEY is empty. Please set it to your OpenAI API key.")
+        # NOTE: OPENAI_API_KEY is NOT required when using custom LLMs
+        # CrewAI only requires this environment variable when:
+        # 1. Using string model names like llm="gpt-4"
+        # 2. Not providing a custom LLM instance
+        # Since we're using create_crewai_vllm_model() which returns a custom
+        # BaseLLM implementation, the OPENAI_API_KEY is unnecessary.
+        # 
+        # The confusion comes from older CrewAI versions (< 0.28.0) that had
+        # stricter validation. Modern versions are more flexible with custom LLMs.
 
         # Create Agent Brain with CrewAI-compatible wrapper
         logger.info("Initializing vLLM engine with CrewAI wrapper...")
