@@ -1,8 +1,42 @@
+#!/usr/bin/env python3
+"""
+Elminster Agent - Question Answering Prompts and Schema
+
+Author: Jonathan A. Mitchall
+Version: 1.0
+Last Updated: January 10, 2026
+
+License: MIT License
+
+Copyright (c) 2026 Jonathan A. Mitchall
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Revision History:
+    2026-01-10 (v1.0): Initial comprehensive documentation
+"""
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from refection_logger import logger
+from agents.elminster.questions import question_response_output
 import re
 import json
 
@@ -68,32 +102,8 @@ def get_response_llm_results(json_str: str):
 
 
 def get_answer_prompt(template:str):
+     template += question_response_output
      template += """
-USE the follwing Format for response:
-
-CRITICAL REQUIREMENTS - ALL 4 FIELDS ARE MANDATORY:
-1. "answer" - The complete expert response to the user's query
-2. "question" - The exact original question being answered
-3. "source" - The specific D&D source material cited (e.g., Player's Handbook, Monster Manual)
-4. "context_summary" - A concise summary (under 500 characters) of the context used
-
-IMPORTANT: Return only a JSON object with actual data values, NOT a schema definition. 
-Do not include "properties" or "required" fields - just return the actual answer data.
-
-Example of CORRECT format - ALL 4 FIELDS REQUIRED:
-{{
-    "answer": "Rogues gain several key class features: Expertise (proficiency bonus doubled for two skills), Sneak Attack (extra damage when attacking with advantage), Thieves' Cant (secret language), and Cunning Action (bonus action for Dash, Disengage, or Hide).",
-    "question": "What are the class features available to Rogues?", 
-    "source": "Player's Handbook - Dungeons & Dragons - Sources - D&D Beyond",
-    "context_summary": "Rogue class features from levels 1-20 including base abilities, Cunning Action at 2nd level, and subclass-specific features"
-}}
-
-MANDATORY FIELDS CHECKLIST:
-✓ answer (string - detailed response)
-✓ question (string - original question)
-✓ source (string - D&D source material)
-✓ context_summary (string - under 500 chars)
-
 {format_instructions}"""
      answer_generation_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(template),

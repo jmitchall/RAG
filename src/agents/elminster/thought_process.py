@@ -1,10 +1,44 @@
+#!/usr/bin/env python3
+"""
+Elminster Agent - Core Agent Logic and State Management
+
+Author: Jonathan A. Mitchall
+Version: 1.0
+Last Updated: January 10, 2026
+
+License: MIT License
+
+Copyright (c) 2026 Jonathan A. Mitchall
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Revision History:
+    2026-01-10 (v1.0): Initial comprehensive documentation
+"""
+
 import traceback
 from abc import ABC
 from agents.elminster.prompts.context.langchain_context_prompt import  get_context_retrieval_prompt_tools
 from agents.elminster.prompts.question.langchain_question_prompt import get_answer_prompt
 from agents.elminster.prompts.reflection.langchain_critique_prompt import  get_reflection_prompt
 from agents.elminster.prompts.revision.langchain_revision_prompt import get_revision_prompt
-from agents.elminster.questions import dm_question_expertise, reflect_on_answer, revise_question_prompt
+from agents.elminster.questions import dm_question_expertise, reflect_on_answer, revise_question_prompt, dm_question_task_description
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import BaseTool
@@ -99,7 +133,7 @@ class ThoughtProcessAgent(ABC):
             lambda x: self.handle_tool_calls(x, tools))
 
     def get_generation_chain(self):
-        answer_generation_prompt = get_answer_prompt(dm_question_expertise)
+        answer_generation_prompt = get_answer_prompt(dm_question_expertise + dm_question_task_description)
 
         return answer_generation_prompt | RunnableLambda(
             lambda x: self.llm.unbind_tools(x)) | self.llm
