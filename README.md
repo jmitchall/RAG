@@ -87,13 +87,16 @@
 - **ChromaDB** (1.1.1): Developer-friendly vector database with SQLite backend
 
 **Design Patterns**:
-- **Reflection Agent Pattern**: Iterative self-critique and refinement loop
-- **Factory Pattern**: `VectorDBFactory` for database abstraction
-- **Abstract Base Classes**: `VectorDBInterface`, `EmbeddingModelInterface`, `BaseDocumentChunker`
-- **Strategy Pattern**: Configurable retrieval strategies (similarity, MMR, hybrid)
-- **State Machine**: LangGraph workflows with typed state management
-- **Dependency Injection**: Constructor-based configuration for agent components
-- **Repository Pattern**: Separation of vector database operations from business logic
+- **Reflection Agent Pattern**: Iterative self-critique and refinement loop with quality validation
+- **Factory Pattern**: `VectorDBFactory` for runtime database selection and instantiation
+- **Abstract Base Classes**: `VectorDBInterface`, `EmbeddingModelInterface`, `BaseDocumentChunker` for polymorphic implementations
+- **Strategy Pattern**: `RetrievalConfig` dataclass for configurable retrieval strategies (similarity, MMR, score threshold)
+- **State Machine**: LangGraph `StateGraph` with typed `ReflectionAgentState` and conditional edges
+- **Dependency Injection**: Constructor-based LLM, embeddings, and database configuration
+- **Repository Pattern**: Separation of vector database operations via interface abstraction
+- **Adapter Pattern**: `VLLMChatModel` wraps vLLM to extend `BaseChatModel`, CrewAI wrapper extends `CrewAIBaseLLM`
+- **Template Method**: Pydantic `BaseModel` schemas enforce structured LLM output validation
+- **Observer Pattern**: Post-validation correction in `validate_and_correct_revision_needed()`
 
 **Architectural Patterns**:
 - **RAG (Retrieval-Augmented Generation)**: Context retrieval before LLM generation
@@ -137,11 +140,16 @@ vllm-srv/
 │   │   │   ├── thought_process.py         # Core agent logic & state
 │   │   │   ├── prompts/                   # Organized prompt templates
 │   │   │   │   ├── context/               # Context retrieval prompts
+│   │   │   │   │   └── langchain_context_prompt.py  # Tool binding & context retrieval
 │   │   │   │   ├── question/              # Question answering prompts
+│   │   │   │   │   └── langchain_question_prompt.py  # QuestionResponseSchema
 │   │   │   │   ├── reflection/            # Critique prompts
+│   │   │   │   │   └── langchain_critique_prompt.py  # CritiqueOfAnswerSchema
 │   │   │   │   └── revision/              # Question improvement prompts
+│   │   │   │       └── langchain_revision_prompt.py  # Question refinement
 │   │   │   └── tools/                     # Agent tools
-│   │   │       └── refresh_question_context_tool.py
+│   │   │       ├── refresh_question_context_tool.py        # LangChain tool
+│   │   │       └── refresh_question_context_crewai_tool.py # CrewAI tool
 │   │   └── player/                        # Player agent (placeholder, empty)
 │   │
 │   ├── embeddings/                        # Text embedding utilities
@@ -157,6 +165,7 @@ vllm-srv/
 │   ├── experiments/                       # Experimental implementations
 │   │   ├── lang_graph_structured_reflection_agent.py    # With Pydantic schemas
 │   │   ├── lang_graph_unstructured_reflection_agent.py  # Without schemas
+│   │   ├── crewai_llm_agent_test.py       # CrewAI multi-agent implementation
 │   │   ├── langchain_rag_generator.py     # RAG chain debugging utils
 │   │   └── langchain_rag_retriever.py     # Retrieval formatting utils
 │   │
@@ -168,12 +177,13 @@ vllm-srv/
 │   │
 │   ├── inference/                         # LLM inference and models
 │   │   └── vllm_srv/                      # vLLM server implementations
-│   │       ├── cleaner.py                 # GPU memory cleanup
+│   │       ├── cleaner.py                 # GPU memory cleanup utilities
 │   │       ├── vllm_process_manager.py    # Subprocess management
 │   │       ├── vllm_memory_helper.py      # Memory diagnostics
 │   │       ├── vllm_basic.py              # Simple usage examples
 │   │       ├── vllm_chat_example.py       # Chat completions example
-│   │       ├── minstral_langchain.py      # Mistral + vLLM + LangChain
+│   │       ├── minstral_langchain.py      # VLLMChatModel with tool calling
+│   │       ├── minstral_crewai.py         # CrewAI wrapper for vLLM
 │   │       ├── minstral_llmlite.py        # Mistral + llmlite
 │   │       ├── facebook_langchain.py      # Facebook OPT + LangChain
 │   │       ├── facebook_llmlite.py        # Facebook OPT + llmlite
@@ -183,16 +193,16 @@ vllm-srv/
 │   │       └── vLLM Platform and Model Support.md  # Platform support info
 │   │
 │   └── vectordatabases/                   # Vector database implementations
-│       ├── vector_db_interface.py         # Abstract base class
-│       ├── vector_db_factory.py           # Factory pattern
-│       ├── retriever_strategies.py        # Pre-configured strategies
+│       ├── vector_db_interface.py         # VectorDBInterface ABC
+│       ├── vector_db_factory.py           # VectorDBFactory for DB instantiation
+│       ├── retriever_strategies.py        # RetrievalConfig dataclass strategies
 │       ├── mmr_with_scores.py             # MMR comparison utilities
-│       ├── qdrant_vector_db.py            # Qdrant implementation
-│       ├── qdrant_vector_db_commands.py   # Qdrant helper functions
-│       ├── faiss_vector_db.py             # FAISS implementation
-│       ├── fais_vector_db_commands.py     # FAISS helper functions
-│       ├── chroma_vector_db.py            # ChromaDB implementation
-│       ├── chroma_vector_db_commands.py   # ChromaDB helper functions
+│       ├── qdrant_vector_db.py            # QdrantVectorDB implementation
+│       ├── qdrant_vector_db_commands.py   # Qdrant helpers & retriever wrappers
+│       ├── faiss_vector_db.py             # FaissVectorDB implementation
+│       ├── fais_vector_db_commands.py     # FAISS helpers & retriever wrappers
+│       ├── chroma_vector_db.py            # ChromaVectorDB implementation
+│       ├── chroma_vector_db_commands.py   # Chroma helpers & retriever wrappers
 │       └── Vector_DB.md                   # Vector DB comparison guide
 │
 ├── data/                                  # Document collections
@@ -458,15 +468,105 @@ __init__(self, brain, root_path="/home/jmitchall/vllm-srv", **kwargs)
 **Purpose**: LangChain tool wrapper for retrieving context from vector databases.
 
 **Classes**:
-- `RefreshQuestionContextInput`: Pydantic schema for tool inputs
-- `RefreshQuestionContextTool`: LangChain BaseTool implementation
+- `RefreshQuestionContextInput`: Pydantic schema for tool inputs with validation
+- `RefreshQuestionContextTool`: LangChain `BaseTool` implementation for context retrieval
 
 **Methods**:
-- `get_retriever(collection_name, dbtype, root_path)`: Creates retriever instance
-- `get_retriever_and_vector_stores()`: Loads vector database client
+- `get_retriever(collection_name, dbtype, root_path)`: Creates retriever instance for specified DB
+- `get_retriever_and_vector_stores()`: Loads and initializes vector database client
+- `_run(question, root_path, db_type, sources, ...)`: Executes tool to fetch context
 
 **Supported Collections**:
 - dnd_dm, dnd_mm, dnd_player, dnd_raven, vtm
+
+**Supported Databases**:
+- Qdrant, FAISS, ChromaDB
+
+---
+
+#### tools/refresh_question_context_crewai_tool.py
+**Purpose**: CrewAI-compatible tool wrapper for context retrieval in multi-agent workflows.
+
+**Classes**:
+- `RefreshQuestionContextToolCrewAI`: CrewAI `BaseTool` implementation
+  - Shares `RefreshQuestionContextInput` schema with LangChain version
+  - Compatible with CrewAI agent task assignment and execution
+
+**Key Attributes**:
+- `name`: "refresh_question_context" (tool identifier)
+- `description`: Tool capabilities and usage documentation
+- `args_schema`: `RefreshQuestionContextInput` for parameter validation
+
+**Methods**:
+- `_run(question, root_path, db_type, sources, ...)`: CrewAI execution interface
+- Delegates to same retrieval logic as LangChain version
+
+---
+
+#### prompts/context/langchain_context_prompt.py
+**Purpose**: Context retrieval prompt templates and tool binding logic.
+
+**Functions**:
+- `get_context_retrieval_prompt_tools()`: Returns ChatPromptTemplate bound to RefreshQuestionContextTool
+- `get_tool_input_request(question, sources, db_type, root_path, critique)`: Generates formatted tool invocation instructions
+  - Enforces ALL sources usage (prevents subset selection)
+  - Provides examples for 1, 2, and 4+ source scenarios
+  - Includes critique handling for question refinement
+
+---
+
+#### prompts/question/langchain_question_prompt.py
+**Purpose**: Question answering prompt templates and response validation schemas.
+
+**Classes**:
+- `QuestionResponseSchema`: Pydantic model for answer validation
+  - `answer`: Expert response to query
+  - `question`: Original question
+  - `source`: Source document reference
+  - `context_summary`: <500 char context summary
+  - `has_required_fields(data)`: Field presence validation
+  - `validate_dict_safe(data)`: Safe validation with error handling
+
+**Functions**:
+- `get_response_llm_results(json_str)`: Parses LLM output to QuestionResponseSchema
+- `extract_json_response_output(raw_output)`: Cleans and extracts JSON from LLM response
+- `get_answer_prompt()`: Returns ChatPromptTemplate for answer generation
+
+---
+
+#### prompts/reflection/langchain_critique_prompt.py
+**Purpose**: Answer evaluation and critique prompt templates with quality rubrics.
+
+**Classes**:
+- `CritiqueOfAnswerSchema`: Pydantic model for answer evaluation
+  - `critique`: Evaluation text
+  - `clarity`: Boolean for comprehension assessment
+  - `succinct`: Boolean for conciseness evaluation
+  - `readabilty`: Boolean for reading level (5th grade vs graduate)
+  - `revision_needed`: Boolean flag for refinement requirement
+  - `response`: Nested `QuestionResponseSchema`
+  - `has_required_fields(data)`: Validates schema structure
+  - `validate_dict_safe(data)`: Error-safe validation
+
+**Functions**:
+- `validate_and_correct_revision_needed(critique_obj)`: Post-processing validation enforcer
+  - Rule 1: Failed rubric → forces `revision_needed = True`
+  - Rule 2: Suggestion keywords in critique → forces revision
+  - Returns corrected CritiqueOfAnswerSchema with reasoning
+- `get_critique_llm_results(json_str)`: Parses LLM output to CritiqueOfAnswerSchema
+- `extract_json_reflection_output(raw_output)`: Cleans and extracts critique JSON
+- `get_reflection_prompt()`: Returns ChatPromptTemplate for critique generation
+
+---
+
+#### prompts/revision/langchain_revision_prompt.py
+**Purpose**: Question refinement prompt templates for iterative improvement.
+
+**Functions**:
+- `get_revision_prompt(template)`: Returns ChatPromptTemplate for question improvement
+  - Takes template string with critique context
+  - Includes MessagesPlaceholder for conversation history
+  - Used to generate improved questions based on evaluation feedback
 
 ---
 
@@ -589,6 +689,104 @@ __init__(self, brain, embedding_model="BAAI/bge-large-en-v1.5",
 - No output schemas (QuestionResponseSchema, CritiqueOfAnswerSchema)
 - More flexible LLM output handling
 - Better for experimental/prototyping work
+
+---
+
+#### experiments/crewai_llm_agent_test.py
+**Purpose**: Experimental CrewAI multi-agent implementation demonstrating collaborative agent workflows for D&D question answering.
+
+**Key Classes**:
+
+#### `CrewAIReflectionAgent` (@CrewBase)
+CrewAI-based reflection agent system using the `@CrewBase` decorator for automatic agent and task management.
+
+**Constructor**:
+```python
+__init__(self, llm)
+```
+- `llm`: CrewAI-compatible LLM wrapper (from `create_crewai_vllm_model()`)
+- Used for both general reasoning and function calling across all agents
+
+**Agent Methods** (decorated with `@agent`):
+
+##### `context_agent()`
+Creates a context retrieval specialist agent that searches D&D rulebooks using tools.
+- **Role**: "D&D Context Retrieval Specialist"
+- **Goal**: Retrieve accurate D&D rulebook context using the refresh_question_context tool
+- **Tools**: `RefreshQuestionContextToolCrewAI()` for vector database searches
+- **Configuration**:
+  - `llm`: General reasoning and output generation
+  - `function_calling_llm`: Tool selection and parameter generation
+  - `allow_delegation`: False (specialized, non-delegating agent)
+  - `verbose`: True (detailed execution logs)
+
+##### `question_response_agent()`
+Creates an expert D&D Game Master agent that generates answers using retrieved context.
+- **Role**: "Questions Answering Dungeons and Dragons Game Master"
+- **Goal**: Provide compelling and accurate responses to D&D questions
+- **Backstory**: Uses `dm_question_expertise` prompt template
+- **Configuration**:
+  - `allow_delegation`: False (terminal task agent)
+  - `verbose`: True
+
+**Task Methods** (decorated with `@task`):
+
+##### `context_retriever_task(question, vector_db_type, root_path)`
+Creates a task for retrieving D&D rulebook context from vector databases.
+- **Args**:
+  - `question` (str): User's D&D question (default: "What is a Rogue?")
+  - `vector_db_type` (str): Database type - 'qdrant', 'faiss', or 'chroma' (default: "qdrant")
+  - `root_path` (str): Project root path (default: "/home/jmitchall/vllm-srv")
+- **Description**: Instructs context_agent to use `refresh_question_context` tool with specified parameters
+- **Expected Output**: Structured format with QUESTION, CONTEXT, and CRITIQUE sections
+- **Assigned Agent**: `context_agent()`
+
+##### `question_response_task()`
+Creates a task for generating expert D&D answers using context from the previous task.
+- **Args**: None (receives input via task dependencies)
+- **Description**: Instructs question_response_agent to read QUESTION and CONTEXT from previous task output
+- **Expected Output**: JSON formatted according to `QuestionResponseSchema`
+- **Configuration**:
+  - `output_pydantic`: `QuestionResponseSchema` (structured validation)
+  - `output_file`: "response.json" (automatic file output)
+- **Assigned Agent**: `question_response_agent()`
+
+**Main Execution Block** (`if __name__ == "__main__"`):
+```python
+# 1. Initialize vLLM with CrewAI wrapper
+llm = create_crewai_vllm_model(download_dir="./models")
+
+# 2. Create agent system
+reflection_agent = CrewAIReflectionAgent(llm=llm)
+
+# 3. Create tasks with dependencies
+context_task = reflection_agent.context_retriever_task(question="What is a Warlock in D&D?")
+question_task = reflection_agent.question_response_task()
+question_task.context = [context_task]  # Set task dependency
+
+# 4. Create crew and execute
+crew = Crew(tasks=[context_task, question_task], verbose=True)
+result = crew.kickoff()
+```
+
+**CrewAI Decorator Patterns**:
+- `@CrewBase`: Marks class for automatic agent/task management
+- `@agent`: Marks methods as agent factories for CrewAI discovery
+- `@task`: Marks methods as task factories for CrewAI workflow engine
+
+**Key Features**:
+- Multi-agent collaboration with explicit task dependencies
+- Tool-based context retrieval (RefreshQuestionContextToolCrewAI)
+- Pydantic output validation (QuestionResponseSchema)
+- Automatic JSON file output (response.json)
+- GPU memory management with cleanup utilities
+
+**Dependencies**:
+- `crewai`: Agent, Task, Crew, CrewBase decorators
+- `inference.vllm_srv.minstral_crewai`: CrewAI vLLM wrapper
+- `agents.elminster.tools.refresh_question_context_crewai_tool`: CrewAI-compatible tool
+- `agents.elminster.prompts.question.langchain_question_prompt`: QuestionResponseSchema
+- `refection_logger`: Centralized logging
 
 ---
 
