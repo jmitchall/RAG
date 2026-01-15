@@ -28,12 +28,33 @@
 **Elminster** is an AI agent framework designed to provide intelligent question-answering capabilities using **Large Language Models (LLMs)** combined with **Retrieval-Augmented Generation (RAG)**. The system processes documents from multiple sources (Dungeons & Dragons rulebooks, Vampire: The Masquerade books, etc.), converts them into searchable vector embeddings, and uses a reflection agent pattern to generate high-quality answers with iterative refinement.
 
 ### Key Technologies
-- **vLLM**: Fast LLM inference engine
-- **LangChain**: Framework for building LLM applications
-- **LlamaIndex**: Document indexing and retrieval
-- **Vector Databases**: Qdrant, FAISS, Chroma (for semantic search)
-- **HuggingFace Transformers**: Local embedding models
-- **LangGraph**: Agent orchestration and workflow management
+
+**Implemented Agent Frameworks:**
+- **LangGraph** (≥1.0.1): Production reflection agent with state-based workflows (`StateGraph`, conditional edges)
+- **CrewAI** (≥1.6.1): Multi-agent collaboration with custom vLLM wrapper (`CrewAIBaseLLM` integration)
+
+**LLM Inference & Embeddings:**
+- **vLLM** (≥0.6.0): Custom `VLLMChatModel` with tool calling, GPU optimization, quantized model support
+- **HuggingFace Transformers** (≥4.30.0): Local embeddings (`AutoModel`, `AutoTokenizer`) with offline support
+- **PyTorch** (≥2.0.0): CUDA GPU acceleration, tensor operations, memory management
+
+**RAG Pipeline & Document Processing:**
+- **LangChain** (0.3.27): Chain orchestration, prompt templates, retrievers, document loaders
+- **LlamaIndex** (≥0.14.12): `SimpleDirectoryReader`, semantic/hierarchical node parsing, embeddings integration
+- **PyMuPDF** (1.26.7): PDF parsing via `PyMuPDFReader` and `PyMuPDFLoader` for complex documents
+
+**Vector Databases (Full Implementations):**
+- **Qdrant** (<1.16): Custom `QdrantVectorDB` class with metadata filtering, MMR retrieval
+- **FAISS** (1.12.0): Custom `FaissVectorDB` with GPU acceleration and similarity search
+- **ChromaDB** (1.1.1): Custom `ChromaVectorDB` with SQLite persistence and hybrid retrieval
+
+**Data Validation & Parsing:**
+- **Pydantic** (≥2.0.0): `BaseModel` schemas for agent responses (`QuestionResponseSchema`, `CritiqueOfAnswerSchema`)
+- **NumPy** (≥1.21.0): Cosine similarity, embedding distance calculations, vector operations
+
+**Infrastructure:**
+- **Ray** (≥2.5.0): Distributed computing backend required by vLLM for model parallelism
+- **FastAPI** (≥0.100.0): API framework for potential web service deployment
 
 ---
 
